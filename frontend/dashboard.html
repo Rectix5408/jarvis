@@ -8,12 +8,13 @@
     <link rel="icon" href="/static/favicon.png" />
     <link rel="stylesheet" href="/static/css/theme.css?v=11" />
     <link rel="stylesheet" href="/static/css/dashboard.css?v=2" />
-    <link rel="stylesheet" href="/static/css/workspace.css?v=1" />
+    <link rel="stylesheet" href="/static/css/workspace.css?v=2" />
+    <link rel="stylesheet" href="/static/css/cockpit.css?v=1" />
     <script type="importmap">
       { "imports": { "three": "/static/vendor/three/three.module.js" } }
     </script>
     <script src="/static/vendor/lucide/lucide.min.js" defer></script>
-    <script type="module" src="/static/js/dashboard.js"></script>
+    <script type="module" src="/static/js/dashboard.js?v=3"></script>
   </head>
   <body>
     <header class="topbar">
@@ -23,7 +24,7 @@
           alt=""
           width="28"
           height="28"
-        />Jarvis <span>Workspace</span></a
+        />JARVIS <span>ASSISTANT SYSTEM</span></a
       >
       <div class="connection">
         <span id="status-dot"></span
@@ -53,7 +54,7 @@
     <main>
       <aside class="sidebar">
         <div class="eyebrow">JARVIS</div>
-        <h1>Arbeitsbereich</h1>
+        <h1>Kontrollzentrum</h1>
         <div class="metric">
           <span>Aktives Modell</span><strong id="model">Nicht geladen</strong
           ><small id="model-status">Status unbekannt</small>
@@ -88,6 +89,11 @@
               data-lucide="arrow-up-right"
             ></i
           ></a>
+          <button id="open-core">
+            <i data-lucide="audio-lines"></i>Jarvis-Modus<i
+              data-lucide="arrow-up-right"
+            ></i>
+          </button>
           <a href="/userchat"
             ><i data-lucide="users"></i>Benutzer-Chat<i
               data-lucide="arrow-up-right"
@@ -108,8 +114,8 @@
       <section class="workspace" aria-label="Wissensnetz">
         <div class="scene-header">
           <div>
-            <div class="eyebrow">WISSEN</div>
-            <h2>Wissensnetz</h2>
+            <div class="eyebrow">JARVIS / INTELLIGENCE</div>
+            <h2 id="scene-title">Wissensnetz</h2>
           </div>
           <button
             class="icon"
@@ -125,12 +131,42 @@
             3D nicht verfuegbar. Die Dateiliste bleibt erreichbar.
           </p>
         </div>
+        <div class="core-readout" aria-live="polite">
+          <span class="eyebrow">ASSISTENT</span>
+          <strong id="assistant-state">Bereit fuer ein Gespraech</strong>
+          <div class="signal-bars" aria-hidden="true">
+            <b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b>
+          </div>
+          <button id="scene-chat">
+            <i data-lucide="messages-square"></i>Mit Jarvis sprechen<i
+              data-lucide="arrow-up-right"
+            ></i>
+          </button>
+        </div>
         <div class="scene-controls">
           <div class="segmented" role="group" aria-label="Ansicht">
             <button id="network-mode" aria-pressed="true">Wissensnetz</button
             ><button id="core-mode" aria-pressed="false">Jarvis</button>
           </div>
           <div class="tools">
+            <button
+              class="icon"
+              id="labels"
+              title="Gruppennamen anzeigen"
+              aria-label="Gruppennamen anzeigen"
+              aria-pressed="true"
+            >
+              <i data-lucide="tag"></i>
+            </button>
+            <button
+              class="icon"
+              id="focus-selection"
+              title="Auswahl fokussieren"
+              aria-label="Auswahl fokussieren"
+              disabled
+            >
+              <i data-lucide="focus"></i>
+            </button>
             <button
               class="icon"
               id="pause"
@@ -149,6 +185,11 @@
             </button>
           </div>
         </div>
+        <div class="network-summary">
+          <span><i class="legend-group"></i>Gruppen</span
+          ><span><i class="legend-file"></i>Dateien</span>
+          <span id="network-summary">Keine Verbindungen geladen</span>
+        </div>
         <div class="selection" aria-live="polite">
           <span id="selected-type">WORKSPACE</span
           ><strong id="selected-name">JARVIS</strong
@@ -160,6 +201,9 @@
         <section class="files" aria-label="Wissensdateien">
           <div class="files-header">
             <h2>Dateien</h2>
+            <select id="group-filter" aria-label="Wissensgruppe filtern">
+              <option value="">Alle Gruppen</option>
+            </select>
             <label class="search"
               ><i data-lucide="search"></i
               ><input
@@ -176,7 +220,7 @@
     </main>
     <dialog id="chat-dialog">
       <div class="chat-heading">
-        <strong>JARVIS / ASSISTENT</strong
+        <strong>JARVIS / GESPRAECH</strong
         ><a
           class="icon"
           href="/chat"

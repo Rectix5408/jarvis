@@ -105,6 +105,39 @@ async function run() {
       );
       console.log("Data and canvas ready");
       check(
+        (await page.locator("body").getAttribute("data-mode")) === "core",
+        "Jarvis is the primary view",
+      );
+      await page.screenshot({
+        path: `/tmp/jarvis-cockpit-core-${viewport.width}.png`,
+        fullPage: true,
+      });
+      await page.locator("#network-mode").click();
+      await page.locator("#group-filter").selectOption("g2");
+      check(
+        (await page.locator("#files li").count()) === 72,
+        "Group filter scopes files",
+      );
+      check(
+        (await page.locator("#scene").getAttribute("data-nodes")) === "72",
+        "Group filter scopes geometry",
+      );
+      await page.locator("#files li button").first().click();
+      check(
+        await page.locator("#focus-selection").isEnabled(),
+        "Selection can be focused",
+      );
+      await page.locator("#focus-selection").click();
+      await page.locator("#labels").click();
+      check(
+        (await page.locator("#labels").getAttribute("aria-pressed")) ===
+          "false",
+        "Group labels toggle",
+      );
+      await page.locator("#labels").click();
+      await page.locator("#group-filter").selectOption("");
+      await page.locator("#reset").click();
+      check(
         await page
           .locator("#model")
           .evaluate((el) => el.scrollWidth <= el.clientWidth),
@@ -262,11 +295,67 @@ async function run() {
         ),
         "Microphone allowed for existing flow",
       );
+      const chat = await page.locator("#chat-frame").elementHandle();
+      const chatPage = await chat.contentFrame();
+      await chatPage.waitForLoadState();
+      await page.evaluate(() =>
+        window.postMessage(
+          { type: "jarvis:activity", state: "speaking" },
+          location.origin,
+        ),
+      );
+      await page.waitForTimeout(50);
+      check(
+        (await page.locator("body").getAttribute("data-activity")) === "idle",
+        "Other windows cannot spoof activity",
+      );
+      await chatPage.evaluate(() =>
+        parent.postMessage(
+          { type: "jarvis:activity", state: "working" },
+          location.origin,
+        ),
+      );
+      await page.waitForFunction(
+        () => document.body.dataset.activity === "working",
+      );
+      check(
+        (await page.locator("#assistant-state").textContent()) ===
+          "Jarvis arbeitet",
+        "Actual frame status is displayed",
+      );
+      await page.evaluate(() =>
+        dispatchEvent(
+          new MessageEvent("message", {
+            origin: "https://untrusted.invalid",
+            source: document.getElementById("chat-frame").contentWindow,
+            data: { type: "jarvis:activity", state: "speaking" },
+          }),
+        ),
+      );
+      check(
+        (await page.locator("body").getAttribute("data-activity")) ===
+          "working",
+        "Foreign origin is rejected",
+      );
+      await chatPage.evaluate(() =>
+        parent.postMessage(
+          { type: "jarvis:activity", state: "not-a-state" },
+          location.origin,
+        ),
+      );
+      await page.waitForTimeout(50);
+      check(
+        (await page.locator("body").getAttribute("data-activity")) ===
+          "working",
+        "Invalid activity is rejected",
+      );
       await page.keyboard.press("Escape");
       check(
         await page.locator("#chat-dialog").isHidden(),
         "Escape dismisses dialog",
       );
+      await page.waitForFunction(() => document.body.dataset.activity === "idle");
+      check((await page.locator("body").getAttribute("data-activity")) === "idle", "Closing clears transient visual state");
       await page.screenshot({
         path: `/tmp/jarvis-dashboard-${viewport.width}.png`,
         fullPage: true,

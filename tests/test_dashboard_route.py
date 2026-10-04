@@ -1,6 +1,8 @@
 """Exercise the real dashboard route without starting agent integrations."""
 import ast
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlsplit
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
@@ -18,7 +20,16 @@ def test_dashboard_shell():
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
     assert response.headers["content-type"].startswith("text/html")
-    assert 'src="/static/js/dashboard.js"' in response.text
+    class Scripts(HTMLParser):
+        paths = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "script":
+                self.paths.append(urlsplit(dict(attrs).get("src", "")).path)
+
+    scripts = Scripts()
+    scripts.feed(response.text)
+    assert "/static/js/dashboard.js" in scripts.paths
     assert 'id="chat-frame"' in response.text
     assert "SECRET_KEY" not in response.text
 

@@ -1,9 +1,16 @@
 /**
  * Jarvis Chat UI – WebSocket-basierte Chat-Oberfläche
  * Android-identisches Bubble-Design mit LDAP-Authentifizierung
+ * Modified for this fork: same-origin cockpit activity display, 2026-10-04.
  */
 (() => {
     'use strict';
+
+    // Visual status only: never send conversation text, credentials or executable commands to the parent.
+    function cockpitActivity(state) {
+        document.body.dataset.activity = state;
+        if (window.parent !== window) window.parent.postMessage({ type: 'jarvis:activity', state }, window.location.origin);
+    }
 
     // ─── State ──────────────────────────────────────────────────
     // SSO: jeden gueltigen Login-Token akzeptieren (kein Re-Login bei Seitenwechsel)
@@ -140,6 +147,7 @@
 
     function stopSpeak() {
         if (_ttsAudio) { _ttsAudio.pause(); _ttsAudio.src = ''; _ttsAudio = null; }
+        cockpitActivity('idle');
     }
 
     async function speak(text) {
@@ -158,8 +166,10 @@
             const blob = await resp.blob();
             const url = URL.createObjectURL(blob);
             _ttsAudio = new Audio(url);
-            _ttsAudio.onended = () => { URL.revokeObjectURL(url); _ttsAudio = null; };
-            _ttsAudio.play().catch(() => {});
+            _ttsAudio.onplaying = () => cockpitActivity('speaking');
+            _ttsAudio.onended = () => { URL.revokeObjectURL(url); _ttsAudio = null; cockpitActivity('idle'); };
+            _ttsAudio.onerror = () => { URL.revokeObjectURL(url); _ttsAudio = null; cockpitActivity('error'); };
+            _ttsAudio.play().catch(() => { URL.revokeObjectURL(url); _ttsAudio = null; cockpitActivity('error'); });
         } catch (e) { console.warn('[TTS] Fehler:', e); }
     }
 
@@ -810,12 +820,14 @@
                 break;
 
             case 'error':
+                cockpitActivity('error');
                 if (msg.message === 'Nicht autorisiert') {
                     logout();
                 }
                 break;
 
             case 'session_invalid':
+                cockpitActivity('error');
                 // Anmeldeberechtigung entzogen → abmelden, danach greift die
                 // Login-Sperre ('Keine Anmeldeberechtigung').
                 if (msg.message) alert(msg.message);
@@ -823,6 +835,7 @@
                 break;
 
             case 'security_blocked':
+                cockpitActivity('error');
                 if (window.SecurityIncidents) window.SecurityIncidents.fetchAndShowBlocked();
                 break;
 
@@ -928,6 +941,7 @@
         const isSub = !!agent.is_sub_agent;
 
         if (ev === 'started' && !isSub) {
+            cockpitActivity('working');
             // Hauptagent: neuer Lauf -> Agent-Infos/Sub-Streams zuruecksetzen
             agentRunning = true;
             _startRunWatchdog();
@@ -939,6 +953,7 @@
             _activeAgentId = '_main';
             if (agent.agent_id) _agentInfos[agent.agent_id] = { label: agent.label || 'Jarvis', state: 'running', is_sub_agent: false };
         } else if (ev === 'finished' && !isSub) {
+            cockpitActivity('idle');
             agentRunning = false;
             _stopRunWatchdog();
             stopBtn.classList.add('hidden');
@@ -1486,6 +1501,7 @@
     function _releaseRun(grund) {
         _stopRunWatchdog();
         if (!agentRunning) return;
+        cockpitActivity('error');
         agentRunning = false;
         try { stopBtn.classList.add('hidden'); } catch (e) { /* egal */ }
         _clearActivity();
@@ -2495,6 +2511,7 @@
             recognition.lang = 'de-DE';
 
             recognition.onstart = () => {
+                cockpitActivity('listening');
                 isRecording = true;
                 btnMic.classList.add('recording');
             };
@@ -2513,6 +2530,7 @@
             recognition.onend = () => stopMic();
 
             function stopMic() {
+                cockpitActivity(agentRunning ? 'working' : 'idle');
                 isRecording = false;
                 btnMic.classList.remove('recording');
                 if (recognition) recognition.stop();

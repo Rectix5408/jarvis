@@ -3,6 +3,53 @@
  * Layout visibility, authentication, branding and print styles remain owned by the page.
  */
 @media screen {
+  .chat-screen .chat-sidebar {
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+  }
+  .chat-screen .messages {
+    padding: 24px;
+  }
+  .chat-screen .msg-row {
+    margin-bottom: 24px;
+  }
+  .chat-screen .msg-row.bot > div {
+    max-width: min(760px, 100%);
+  }
+  .chat-screen .msg-row.bot .msg-bubble {
+    background: transparent;
+    border: 0;
+    border-left: 2px solid var(--border-hover);
+    padding: 4px 16px;
+    border-radius: 0;
+    line-height: 1.75;
+  }
+  .chat-screen .msg-row.user .msg-bubble {
+    border-radius: 6px;
+    background: rgba(var(--accent-rgb), 0.12);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
+  }
+  .chat-screen .topbar-avatar {
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    border-radius: 6px;
+  }
+  body[data-activity="speaking"] #btn-tts-chat,
+  body[data-activity="listening"] #btn-mic {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  @media (max-width: 600px) {
+    .chat-screen .messages {
+      padding: 16px;
+    }
+    .chat-screen .msg-row.bot .msg-bubble {
+      padding-left: 12px;
+    }
+  }
+}
+@media screen {
   body,
   body.light {
     --gradient: var(--accent);

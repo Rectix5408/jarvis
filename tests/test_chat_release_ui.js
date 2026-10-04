@@ -126,10 +126,12 @@ if (u && u.w.sockets.length) {
         agent: { agent_id: 'a1', label: 'Jarvis', is_sub_agent: false }, agents: [] }) });
     check('Stop-Knopf ist sichtbar (Lauf laeuft)',
         stopBtn && !stopBtn.classList.contains('hidden'));
+    check('Cockpit meldet den echten Agent-Start', w.document.body.dataset.activity === 'working');
     const vorZeilen = statusZeilen(w).length;
 
     section('3. Verbindungsabbruch OHNE finished');
     ws.onclose();
+    check('Cockpit meldet einen verlorenen Lauf als Fehler', w.document.body.dataset.activity === 'error');
     check('Stop-Knopf wieder versteckt', stopBtn && stopBtn.classList.contains('hidden'));
     const zeilen = statusZeilen(w);
     check('es erscheint ein Hinweis', zeilen.length > vorZeilen,
@@ -176,6 +178,7 @@ if (u && u.w.sockets.length) {
         agent: { agent_id: 'a1', label: 'Jarvis', is_sub_agent: false }, agents: [] }) });
     check('nach regulaerem finished: Stop-Knopf versteckt',
         stop2 && stop2.classList.contains('hidden'));
+    check('Cockpit kehrt nach finished in den Ruhezustand zurueck', u2.w.document.body.dataset.activity === 'idle');
     check('nach regulaerem finished KEIN Verlust-Hinweis',
         !statusZeilen(u2.w).some((t) => /erbindung unterbrochen|keine Rückmeldung/.test(t)),
         statusZeilen(u2.w).join(' | ').slice(0, 120));

@@ -13,9 +13,11 @@ const state = {
   files: [],
   groups: [],
   selected: null,
-  mode: "network",
+  mode: "core",
   paused: matchMedia("(prefers-reduced-motion: reduce)").matches,
   authenticated: false,
+  activity: "idle",
+  labels: true,
 };
 const token = () =>
   localStorage.getItem("jarvis_chat_token") ||
@@ -70,6 +72,8 @@ function failure(error) {
     document.body.dataset.connected = "false";
     $("chat-dialog").close();
     $("chat-frame").removeAttribute("src");
+    setActivity("idle");
+    renderGroups();
     state.selected = null;
     renderFiles();
     buildGraph();
@@ -84,6 +88,7 @@ let scene,
   graph,
   root,
   rings = [],
+  labels = [],
   pickable = [],
   renderNodes = [];
 let drawn = 0,
@@ -97,7 +102,7 @@ function initScene() {
       getComputedStyle(document.body).getPropertyValue("--bg-primary").trim(),
     );
     camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-    camera.position.set(0, 2, 14);
+    camera.position.set(0, 1, 6);
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     $("scene").append(renderer.domElement);
@@ -149,8 +154,14 @@ function initScene() {
         angle += delta * 0.09;
         graph.rotation.y = angle;
         rings.forEach((ring, i) => {
-          ring.rotation.z += delta * 0.12 * (i % 2 ? -1 : 1);
+          const speed = state.activity === "working" ? 0.65 : 0.12;
+          ring.rotation.z += delta * speed * (i % 2 ? -1 : 1);
         });
+        root.scale.setScalar(
+          state.activity === "speaking" || state.activity === "listening"
+            ? 1 + Math.sin(clock.elapsedTime * 5) * 0.08
+            : 1,
+        );
       }
       controls.update();
       renderer.render(scene, camera);
@@ -169,6 +180,7 @@ function disposeGraph() {
     if (Array.isArray(object.material))
       object.material.forEach((m) => m.dispose());
     else object.material?.dispose();
+    object.material?.map?.dispose();
   });
 }
 function node(item, radius, color, position) {
@@ -194,6 +206,38 @@ function edge(a, b, color = "#426665") {
     ),
   );
 }
+function groupLabel(text, position) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  context.font = "24px system-ui";
+  context.fillStyle = document.body.classList.contains("light")
+    ? "#303638"
+    : "#eef3f3";
+  context.textAlign = "center";
+  const title = text.length > 30 ? `${text.slice(0, 29)}...` : text;
+  context.fillText(title, 256, 40, 490);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(canvas),
+      depthTest: false,
+    }),
+  );
+  sprite.position.copy(position).y += 0.36;
+  sprite.scale.set(2.5, 0.3125, 1);
+  graph.add(sprite);
+  labels.push(sprite);
+}
+function renderGroups() {
+  const current = $("group-filter").value;
+  $("group-filter").replaceChildren(new Option("Alle Gruppen", ""));
+  for (const group of state.groups)
+    $("group-filter").append(new Option(group.name, group.id));
+  $("group-filter").value = state.groups.some((g) => String(g.id) === current)
+    ? current
+    : "";
+}
 function buildGraph() {
   if (!scene) return;
   disposeGraph();
@@ -202,18 +246,44 @@ function buildGraph() {
   pickable = [];
   renderNodes = [];
   rings = [];
-  root = node(null, 0.43, "#57ddd1", new THREE.Vector3());
-  for (let i = 0; i < 3; i++) {
+  labels = [];
+  root = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.46, 1),
+    new THREE.MeshBasicMaterial({ color: "#57ddd1", wireframe: true }),
+  );
+  graph.add(root);
+  const inner = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.3, 0),
+    new THREE.MeshStandardMaterial({
+      color: "#e8eeed",
+      metalness: 0.8,
+      roughness: 0.3,
+    }),
+  );
+  root.add(inner);
+  for (let i = 0; i < 6; i++) {
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.9 + i * 0.22, 0.012, 8, 100),
-      new THREE.MeshBasicMaterial({ color: i === 1 ? "#efb36f" : "#57ddd1" }),
+      new THREE.TorusGeometry(
+        0.72 + i * 0.16,
+        i % 2 ? 0.012 : 0.025,
+        8,
+        100,
+        i % 2 ? Math.PI * 1.65 : Math.PI * 2,
+      ),
+      new THREE.MeshBasicMaterial({
+        color: i === 1 || i === 4 ? "#efb36f" : "#57ddd1",
+      }),
     );
-    ring.rotation.set(i * 0.7, i * 0.9, 0.3);
+    ring.rotation.set(i < 4 ? 0.08 * i : 0.65, i < 4 ? 0 : i * 0.15, i * 0.5);
     graph.add(ring);
     rings.push(ring);
   }
   const positions = new Map();
-  state.groups.forEach((group, i) => {
+  const visibleGroups = state.groups.filter(
+    (group) =>
+      !$("group-filter").value || String(group.id) === $("group-filter").value,
+  );
+  visibleGroups.forEach((group, i) => {
     const theta = i * 2.39996;
     const pos = new THREE.Vector3(
       Math.cos(theta) * 2.6,
@@ -222,6 +292,7 @@ function buildGraph() {
     );
     positions.set(group.id, pos);
     node({ ...group, kind: "group" }, 0.17, "#efb36f", pos);
+    groupLabel(group.name, pos);
     edge(new THREE.Vector3(), pos);
   });
   // Only geometry is sampled for browser performance; the complete file list remains searchable.
@@ -236,6 +307,8 @@ function buildGraph() {
       y * radius,
       Math.sin(theta) * r * radius,
     );
+    const anchor = positions.get(file.groups[0]?.id);
+    if (anchor) pos.multiplyScalar(0.28).add(anchor);
     const mesh = node(
       { ...file, kind: "file" },
       0.065,
@@ -249,11 +322,18 @@ function buildGraph() {
   });
   graph.rotation.y = angle;
   $("scene").dataset.nodes = String(sample.length);
-  if (state.mode === "core") setMode("core");
+  const links = state.files
+    .filter(matches)
+    .reduce((count, file) => count + file.groups.length, 0);
+  $("network-summary").textContent =
+    `${state.files.filter(matches).length} Dateien / ${links} Zuordnungen${state.files.filter(matches).length > 350 ? " / 350 Knoten angezeigt" : ""}`;
+  setMode(state.mode);
 }
 function setMode(mode) {
   const changed = state.mode !== mode;
   state.mode = mode;
+  document.body.dataset.mode = mode;
+  $("scene-title").textContent = mode === "core" ? "JARVIS" : "Wissensnetz";
   $("network-mode").setAttribute("aria-pressed", String(mode === "network"));
   $("core-mode").setAttribute("aria-pressed", String(mode === "core"));
   if (graph)
@@ -261,6 +341,9 @@ function setMode(mode) {
       object.visible =
         mode === "network" || object === root || rings.includes(object);
     });
+  labels.forEach((label) => {
+    label.visible = mode === "network" && state.labels;
+  });
   if (changed && camera) {
     camera.position.set(0, mode === "core" ? 1 : 2, mode === "core" ? 6 : 14);
     controls.target.set(0, 0, 0);
@@ -268,6 +351,15 @@ function setMode(mode) {
 }
 function select(item) {
   state.selected = item;
+  $("focus-selection").disabled =
+    !item ||
+    !pickable.some(
+      (mesh) =>
+        (item.kind === "group" &&
+          mesh.userData.item?.kind === "group" &&
+          mesh.userData.item.id === item.id) ||
+        (item.kind === "file" && mesh.userData.item?.path === item.path),
+    );
   $("selected-type").textContent =
     item?.kind === "group" ? "GRUPPE" : item ? "DATEI" : "WORKSPACE";
   $("selected-name").textContent = item?.name || "JARVIS";
@@ -288,6 +380,8 @@ function select(item) {
     );
 }
 function matches(file) {
+  const group = $("group-filter").value;
+  if (group && !file.groups.some((g) => String(g.id) === group)) return false;
   const query = $("search").value.trim().toLocaleLowerCase("de");
   return `${file.name} ${file.groups.map((g) => g.name).join(" ")}`
     .toLocaleLowerCase("de")
@@ -360,12 +454,14 @@ async function refresh() {
       ];
       $("file-count").textContent = state.files.length;
       $("group-count").textContent = state.groups.length;
+      renderGroups();
       renderFiles();
       buildGraph();
       select(null);
     } else {
       state.files = [];
       state.groups = [];
+      renderGroups();
       renderFiles();
       buildGraph();
       select(null);
@@ -410,6 +506,7 @@ async function refresh() {
         : "Status nicht verfuegbar";
     $("model-status").dataset.status =
       status.status === "fulfilled" ? status.value.status : "unknown";
+    setActivity(state.activity);
     const failed = results.filter((r) => r.status === "rejected");
     if (failed.length)
       $("message").textContent =
@@ -445,6 +542,29 @@ $("search").addEventListener("input", () => {
   buildGraph();
   select(null);
 });
+$("group-filter").addEventListener("change", () => {
+  renderFiles();
+  buildGraph();
+  select(null);
+});
+$("labels").addEventListener("click", () => {
+  state.labels = !state.labels;
+  $("labels").setAttribute("aria-pressed", String(state.labels));
+  setMode(state.mode);
+});
+$("focus-selection").addEventListener("click", () => {
+  const mesh = pickable.find((mesh) =>
+    state.selected?.kind === "file"
+      ? mesh.userData.item?.path === state.selected.path
+      : mesh.userData.item?.kind === "group" &&
+        mesh.userData.item.id === state.selected?.id,
+  );
+  if (!mesh || !camera) return;
+  setMode("network");
+  const position = mesh.getWorldPosition(new THREE.Vector3());
+  controls.target.copy(position);
+  camera.position.copy(position).add(new THREE.Vector3(0, 1, 6));
+});
 $("refresh").addEventListener("click", refresh);
 $("network-mode").addEventListener("click", () => setMode("network"));
 $("core-mode").addEventListener("click", () => setMode("core"));
@@ -465,7 +585,11 @@ $("pause").addEventListener("click", () => {
   pauseLabel();
 });
 $("reset").addEventListener("click", () => {
-  camera?.position.set(0, 2, 14);
+  camera?.position.set(
+    0,
+    state.mode === "core" ? 1 : 2,
+    state.mode === "core" ? 6 : 14,
+  );
   controls?.target.set(0, 0, 0);
   angle = 0;
   if (graph) graph.rotation.y = 0;
@@ -478,11 +602,55 @@ function openChat() {
   }
   // Reuse the existing chat, including its profile ACLs, tool permissions and microphone flow.
   if (!$("chat-frame").getAttribute("src")) $("chat-frame").src = "/chat";
-  $("chat-dialog").showModal();
+  setMode("core");
+  if (!$("chat-dialog").open) {
+    if (matchMedia("(min-width: 1100px)").matches) $("chat-dialog").show();
+    else $("chat-dialog").showModal();
+  }
 }
+function setActivity(activity) {
+  state.activity = activity;
+  document.body.dataset.activity = activity;
+  const model = $("model-status").dataset.status;
+  $("assistant-state").textContent = {
+    listening: "Jarvis hoert zu",
+    working: "Jarvis arbeitet",
+    speaking: "Jarvis spricht",
+    error: "Gespraech unterbrochen",
+    idle: !state.authenticated
+      ? "Bitte anmelden"
+      : model === "ok"
+        ? "Bereit fuer ein Gespraech"
+        : "Modellverbindung pruefen",
+  }[activity];
+}
+window.addEventListener("message", (event) => {
+  // Only the authenticated, same-origin chat frame can change visual state. No commands or tokens cross this boundary.
+  if (
+    !state.authenticated ||
+    event.origin !== location.origin ||
+    event.source !== $("chat-frame").contentWindow
+  )
+    return;
+  if (
+    event.data?.type === "jarvis:activity" &&
+    ["idle", "listening", "working", "speaking", "error"].includes(
+      event.data.state,
+    )
+  )
+    setActivity(event.data.state);
+});
+$("scene-chat").addEventListener("click", openChat);
+$("open-core").addEventListener("click", () => setMode("core"));
+$("chat-dialog").addEventListener("close", () => {
+  setActivity("idle");
+});
 $("open-chat").addEventListener("click", openChat);
 $("top-chat").addEventListener("click", openChat);
 $("close-chat").addEventListener("click", () => $("chat-dialog").close());
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && $("chat-dialog").open) $("chat-dialog").close();
+});
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refresh();
 });
@@ -511,6 +679,7 @@ function applySceneTheme() {
     mesh.material.color.set(light ? "#3f7771" : "#c5e9e5");
     mesh.material.emissive.set(light ? "#3f7771" : "#c5e9e5");
   }
+  buildGraph();
   const icon = document.createElement("i");
   icon.dataset.lucide = light ? "moon" : "sun";
   $("theme-toggle").replaceChildren(icon);
