@@ -5369,6 +5369,15 @@ async def get_profile_key(profile_id: str, user: str = Depends(require_local_aut
     return JSONResponse({"error": "Profil nicht gefunden"}, status_code=404)
 
 
+def _llm_models_url(api_url: str) -> str:
+    """Accept the completion URLs used by profiles as well as a bare API base."""
+    url = httpx.URL(api_url.strip())
+    path = url.path.rstrip("/")
+    if path.endswith("/chat/completions"):
+        path = path[:-len("/chat/completions")]
+    return str(url.copy_with(path=path + "/models", fragment=None))
+
+
 async def _probe_llm_connection(provider: str, api_url: str, api_key: str,
                                 model: str, auth_method: str = "api_key",
                                 session_key: str = "") -> dict:
@@ -5400,7 +5409,7 @@ async def _probe_llm_connection(provider: str, api_url: str, api_key: str,
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0)) as client:
             # Schritt 1: Models-Endpoint (schnell)
             if provider == "openai_compatible":
-                models_url = f"{api_url}/models"
+                models_url = _llm_models_url(api_url)
             elif provider == "google":
                 t0 = time.monotonic()
                 gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
@@ -5444,6 +5453,7 @@ async def _probe_llm_connection(provider: str, api_url: str, api_key: str,
                 return {
                     "success": True,
                     "message": f"Anthropic API OK – {len(model_ids)} Modelle verfügbar" + (f", '{model}' ✓" if model_found else f" – '{model}' nicht gefunden!"),
+                    "available_models": model_ids,
                     "latency_ms": latency,
                     "model_found": model_found,
                 }
@@ -5537,7 +5547,7 @@ async def _list_llm_models(provider: str, api_url: str, api_key: str,
                 headers = {}
                 if key:
                     headers["Authorization"] = f"Bearer {key}"
-                r = await client.get(f"{api_url}/models", headers=headers)
+                r = await client.get(_llm_models_url(api_url), headers=headers)
                 if r.status_code >= 400:
                     return {"success": False, "error": f"HTTP {r.status_code}: {r.text[:120]}"}
                 models = sorted(m.get("id", "") for m in r.json().get("data", []))
@@ -5579,6 +5589,25 @@ def _caps_session(body: dict) -> str:
         if prof:
             return prof.get("session_key", "") or ""
     return sk
+
+
+@app.post("/api/profiles/test-response")
+async def test_profile_response(request: Request, user: str = Depends(require_local_auth)):
+    """Explicit, potentially billable test; no tools, agent context or auto-polling."""
+    from backend.profile_response_test import test_anthropic_response
+    body = await request.json()
+    if not isinstance(body, dict) or any(not isinstance(body.get(field, ""), str)
+                                         for field in ("provider", "model", "api_key", "profile_id", "auth_method")):
+        return JSONResponse({"success": False, "error": "Ungueltige Profilwerte."}, status_code=400)
+    if body.get("confirm_billable") is not True:
+        return JSONResponse({"success": False, "error": "Kostenpflichtigen Test bitte bestaetigen."}, status_code=400)
+    if body.get("provider") != "anthropic" or body.get("auth_method", "api_key") != "api_key":
+        return JSONResponse({"success": False, "error": "Antworttest nur fuer die direkte Anthropic-API."}, status_code=400)
+    if body.get("profile_id") and (not body.get("api_key") or "*" in body.get("api_key", "")):
+        prof = next((p for p in config.profiles if p.get("id") == body["profile_id"]), None)
+        if not prof or prof.get("provider") != "anthropic":
+            return JSONResponse({"success": False, "error": "Kein passendes Anthropic-Profil gefunden."}, status_code=400)
+    return JSONResponse(await test_anthropic_response(_caps_key(body), body.get("model", "")))
 
 
 @app.post("/api/profiles/capabilities")

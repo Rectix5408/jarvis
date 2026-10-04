@@ -486,6 +486,8 @@
         const btnCancelProfile = document.getElementById('btn-cancel-profile');
         const btnTestProfile = document.getElementById('btn-test-profile');
         const profileTestResult = document.getElementById('profile-test-result');
+        const btnTestResponse = document.getElementById('btn-test-profile-response');
+        const responseTestResult = document.getElementById('profile-response-result');
 
         let profiles = [];
         let activeProfileId = '';
@@ -1667,6 +1669,8 @@
             const isAnthropic = provider === 'anthropic';
             const isOpenAICompat = provider === 'openai_compatible';
             const isSession = radioSession && radioSession.checked;
+            if (btnTestResponse) btnTestResponse.hidden = !isAnthropic || isSession;
+            if (responseTestResult) { responseTestResult.hidden = true; responseTestResult.textContent = ''; }
 
             // Datalist mit Vorschlägen für aktuellen Provider befüllen
             const models = (defaults[provider] && defaults[provider].models) || [];
@@ -1797,6 +1801,27 @@
         if (btnCloseProfileEdit) btnCloseProfileEdit.addEventListener('click', showListView);
 
         // ── Verbindung testen ──
+        if (btnTestResponse) btnTestResponse.addEventListener('click', async () => {
+            if (!confirm(window.t('profile.response_confirm'))) return;
+            btnTestResponse.disabled = true;
+            responseTestResult.hidden = false;
+            responseTestResult.textContent = window.t('profile.response_testing');
+            try {
+                const res = await fetch('/api/profiles/test-response', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: selectProvider.value, model: inputModel.value.trim(),
+                        api_key: inputKey.value.trim(), profile_id: editingProfileId || '',
+                        auth_method: (radioSession && radioSession.checked) ? 'session' : 'api_key', confirm_billable: true }),
+                });
+                const data = await res.json();
+                responseTestResult.textContent = data.success
+                    ? `${data.message}\n${data.response}\n${data.latency_ms} ms | ${data.usage.input_tokens} Input / ${data.usage.output_tokens} Output tokens`
+                    : data.error || window.t('profile.response_failed');
+                responseTestResult.style.color = data.success ? 'var(--success)' : 'var(--danger)';
+            } catch (_) { responseTestResult.textContent = window.t('profile.response_failed'); }
+            finally { btnTestResponse.disabled = false; }
+        });
         if (btnTestProfile) {
             btnTestProfile.addEventListener('click', async () => {
                 btnTestProfile.disabled = true;
@@ -1809,6 +1834,7 @@
                 try {
                     // Aktuelle Formularwerte verwenden (nicht die gespeicherten)
                     const testPayload = {
+                        profile_id: editingProfileId || '',
                         provider: selectProvider.value,
                         api_url: inputUrl.value.trim(),
                         api_key: inputKey.value.trim(),

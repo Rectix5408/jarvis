@@ -17,27 +17,28 @@
     --fg-rgb: 255, 255, 255;
     --shadow-rgb: 0, 0, 0;
 
-    --bg-primary: #0a0e17;
-    --bg-secondary: #111827;
-    --bg-glass: rgba(15, 23, 42, 0.75);
-    --bg-glass-heavy: rgba(15, 23, 42, 0.9);
+    /* Modified 2026-10-04: unified workspace palette; branding overrides remain supported. */
+    --bg-primary: #131617;
+    --bg-secondary: #1b1f21;
+    --bg-glass: rgba(27, 31, 33, 0.96);
+    --bg-glass-heavy: rgba(27, 31, 33, 0.99);
 
     --border: rgba(var(--fg-rgb), 0.08);
     --border-hover: rgba(var(--fg-rgb), 0.15);
 
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-primary: #eff2f3;
+    --text-secondary: #a8b1b5;
+    --text-muted: #8a969c;
 
-    /* Akzent = Markenfarbe (Default Lila, von Branding ueberschrieben) */
-    --accent: #9B59B6;
-    --accent-hover: #BB86FC;
-    --accent-dark: #6A0DAD;
-    --accent-glow: rgba(155, 89, 182, 0.4);
-    --accent-light: rgba(155, 89, 182, 0.1);
+    /* Akzent = Markenfarbe (Default Tuerkis, von Branding ueberschrieben) */
+    --accent: #49b6a8;
+    --accent-hover: #72d0c2;
+    --accent-dark: #26796f;
+    --accent-glow: rgba(73, 182, 168, 0.15);
+    --accent-light: rgba(73, 182, 168, 0.1);
     /* RGB-Tripel des Akzents fuer Toenungen rgba(var(--accent-rgb), …).
        Wird von branding.js aus der Markenfarbe mitgesetzt. */
-    --accent-rgb: 155, 89, 182;
+    --accent-rgb: 73, 182, 168;
     /* Akzent-Verlauf fuer Primaer-Buttons (.btn-primary). Akzentbasiert,
        damit Branding automatisch greift. */
     --gradient: linear-gradient(135deg, var(--accent), var(--accent-dark));
@@ -55,10 +56,10 @@
     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-    --radius-xl: 24px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 8px;
 
     --shadow-sm: 0 2px 8px rgba(var(--shadow-rgb), 0.3);
     --shadow-md: 0 4px 16px rgba(var(--shadow-rgb), 0.4);

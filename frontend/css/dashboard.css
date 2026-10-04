@@ -1,9 +1,11 @@
-/* SPDX-License-Identifier: Apache-2.0; added for this fork, 2026-10-04. */
+/* SPDX-License-Identifier: Apache-2.0; added for this fork, 2026-10-04.
+ * Modified: unified workspace styling and responsive model display.
+ */
 :root {
   color-scheme: dark;
-  --bg: #101314;
-  --panel: #171c1e;
-  --line: #30383b;
+  --bg: #131617;
+  --panel: #1b1f21;
+  --line: #303638;
   --muted: #99aaae;
   --cyan: #57ddd1;
   --text: #eef3f3;
@@ -597,5 +599,324 @@ iframe {
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto;
+  }
+}
+
+/* Workspace components use the same light/dark and branding tokens as chat. */
+body {
+  --bg: var(--bg-primary);
+  --panel: var(--bg-secondary);
+  --line: var(--border-hover);
+  --muted: var(--text-secondary);
+  --cyan: var(--accent-hover);
+  --text: var(--text-primary);
+  --orange: #e6b679;
+}
+.topbar {
+  height: 64px;
+  padding: 0 24px;
+}
+.brand {
+  font-size: 19px;
+  font-weight: 600;
+}
+.brand span {
+  font-size: 12px;
+  font-weight: 400;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+.top-actions {
+  gap: 8px;
+}
+.top-actions > span {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 10px;
+}
+main {
+  grid-template-columns: 256px minmax(0, 1fr);
+  min-height: calc(100vh - 64px);
+}
+.sidebar {
+  background: var(--panel);
+  padding: 28px 20px;
+  gap: 20px;
+}
+.sidebar > .eyebrow {
+  order: -3;
+  color: var(--muted);
+  font-size: 10px;
+}
+.sidebar > h1 {
+  order: -2;
+  font-size: 18px;
+  font-weight: 550;
+  margin: -12px 0 2px;
+}
+.sidebar > nav {
+  order: -1;
+  margin: 0 -8px 10px;
+  gap: 4px;
+}
+nav a,
+nav button {
+  padding: 11px 8px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 13px;
+  gap: 10px;
+  min-height: 42px;
+}
+nav button:first-child {
+  background: rgba(var(--accent-rgb), 0.09);
+  color: var(--text-primary);
+}
+nav a:hover,
+nav button:hover {
+  background: rgba(var(--fg-rgb), 0.04);
+}
+.metric {
+  gap: 10px;
+}
+.metric > span {
+  font-size: 11px;
+}
+#model {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 450;
+  overflow-wrap: anywhere;
+}
+#model-status {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+#model-status[data-status="ok"] {
+  color: var(--success);
+}
+body.light #model-status[data-status="ok"] {
+  color: #08764f;
+}
+body.light {
+  --orange: #8a540b;
+}
+#model-status[data-status="degraded"],
+#model-status[data-status="down"] {
+  color: var(--orange);
+}
+select {
+  font-size: 12px;
+  padding: 10px 12px;
+  min-height: 40px;
+  background: var(--bg);
+  border-radius: 6px;
+}
+.profile-label {
+  font-size: 11px;
+  margin-bottom: -14px;
+}
+.compact strong {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.counts {
+  padding-top: 18px;
+}
+.counts strong {
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-bottom {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.sidebar-bottom span:first-child {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-bottom span:last-child {
+  font-size: 9px;
+}
+.scene-header {
+  top: 30px;
+  left: 36px;
+  right: 36px;
+}
+.scene-header .eyebrow {
+  color: var(--muted);
+}
+.scene-header h2 {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 500;
+}
+#scene {
+  height: clamp(380px, 56vh, 660px);
+}
+.scene-controls {
+  padding: 0 36px 24px;
+}
+.icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 5px;
+  border-color: var(--line);
+  background: transparent;
+}
+.icon:hover {
+  background: rgba(var(--fg-rgb), 0.04);
+}
+.segmented {
+  padding: 3px;
+  background: var(--panel);
+  border-radius: 6px;
+  gap: 3px;
+}
+.segmented button {
+  font-size: 12px;
+  min-height: 32px;
+  border-radius: 3px;
+  padding: 6px 14px;
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 3px #0002;
+}
+.selection {
+  padding: 18px 36px;
+  min-height: 66px;
+  font-size: 12px;
+}
+.selection > span:first-child {
+  color: var(--muted);
+  font-size: 9px;
+}
+.selection strong {
+  font-size: 13px;
+}
+.files {
+  padding: 24px 36px;
+}
+.files h2 {
+  font-size: 16px;
+}
+.search {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+li button {
+  min-height: 42px;
+  font-size: 12px;
+  padding: 12px 8px;
+}
+li button:hover,
+li button[aria-pressed="true"] {
+  background: rgba(var(--accent-rgb), 0.07);
+}
+dialog {
+  background: var(--bg);
+}
+dialog::backdrop {
+  backdrop-filter: blur(4px);
+}
+@media (max-width: 800px) {
+  main {
+    grid-template-columns: 224px minmax(0, 1fr);
+  }
+  .brand span {
+    display: none;
+  }
+  .scene-header {
+    left: 24px;
+    right: 24px;
+  }
+  .scene-controls,
+  .selection,
+  .files {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+@media (max-width: 600px) {
+  .topbar {
+    height: 60px;
+    min-height: 60px;
+    padding: 0 12px;
+    flex-wrap: nowrap;
+  }
+  .brand {
+    font-size: 17px;
+  }
+  .brand img {
+    width: 24px;
+    height: 24px;
+  }
+  .top-actions {
+    gap: 5px;
+  }
+  .top-actions > span {
+    display: none;
+  }
+  .connection #connection {
+    display: none;
+  }
+  main {
+    display: flex;
+  }
+  .sidebar {
+    display: flex;
+    gap: 20px;
+    padding: 26px 24px;
+  }
+  .sidebar > nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .sidebar > select {
+    width: 100%;
+  }
+  .sidebar .profile-label {
+    display: block;
+  }
+  .sidebar-bottom {
+    display: flex;
+  }
+  .sidebar-bottom span:last-child {
+    margin-left: auto;
+  }
+  body .scene-header {
+    height: 92px;
+    padding: 24px;
+  }
+  .scene-header h2 {
+    font-size: 22px;
+  }
+  body #scene {
+    height: 340px;
+  }
+  .scene-controls {
+    padding-top: 8px;
+    padding-bottom: 20px;
+  }
+  .segmented button {
+    padding: 6px 10px;
+  }
+  .selection {
+    gap: 10px 14px;
+  }
+  .selection > span:nth-child(3) {
+    font-size: 11px;
+  }
+  .files-header {
+    flex-wrap: wrap;
+  }
+  .search {
+    max-width: 100%;
   }
 }

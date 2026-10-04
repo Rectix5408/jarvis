@@ -3,6 +3,12 @@ import * as THREE from "three";
 import { OrbitControls } from "/static/vendor/three/OrbitControls.js";
 
 const $ = (id) => document.getElementById(id);
+try {
+  document.body.classList.toggle(
+    "light",
+    localStorage.getItem("jarvis_theme") === "light",
+  );
+} catch (_) {}
 const state = {
   files: [],
   groups: [],
@@ -50,6 +56,8 @@ function failure(error) {
     state.groups = [];
     $("username").textContent = "";
     $("model").textContent = "Nicht geladen";
+    $("model-status").textContent = "Status unbekannt";
+    $("model-status").dataset.status = "unknown";
     $("cpu").textContent = "--";
     $("cpu-meter").value = 0;
     $("profile").replaceChildren(new Option("Bitte anmelden", ""));
@@ -85,7 +93,9 @@ const raycaster = new THREE.Raycaster(),
 function initScene() {
   try {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color("#101314");
+    scene.background = new THREE.Color(
+      getComputedStyle(document.body).getPropertyValue("--bg-primary").trim(),
+    );
     camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     camera.position.set(0, 2, 14);
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -226,7 +236,12 @@ function buildGraph() {
       y * radius,
       Math.sin(theta) * r * radius,
     );
-    const mesh = node({ ...file, kind: "file" }, 0.065, "#c5e9e5", pos);
+    const mesh = node(
+      { ...file, kind: "file" },
+      0.065,
+      document.body.classList.contains("light") ? "#3f7771" : "#c5e9e5",
+      pos,
+    );
     renderNodes.push(mesh);
     file.groups.forEach((group) => {
       if (positions.has(group.id)) edge(pos, positions.get(group.id));
@@ -393,6 +408,8 @@ async function refresh() {
             down: "Modell nicht erreichbar",
           }[status.value.status] || "Status unbekannt"
         : "Status nicht verfuegbar";
+    $("model-status").dataset.status =
+      status.status === "fulfilled" ? status.value.status : "unknown";
     const failed = results.filter((r) => r.status === "rejected");
     if (failed.length)
       $("message").textContent =
@@ -484,7 +501,31 @@ function updateClock() {
     minute: "2-digit",
   });
 }
+function applySceneTheme() {
+  const light = document.body.classList.contains("light");
+  if (scene)
+    scene.background = new THREE.Color(
+      getComputedStyle(document.body).getPropertyValue("--bg-primary").trim(),
+    );
+  for (const mesh of renderNodes) {
+    mesh.material.color.set(light ? "#3f7771" : "#c5e9e5");
+    mesh.material.emissive.set(light ? "#3f7771" : "#c5e9e5");
+  }
+  const icon = document.createElement("i");
+  icon.dataset.lucide = light ? "moon" : "sun";
+  $("theme-toggle").replaceChildren(icon);
+  icons();
+}
+$("theme-toggle").addEventListener("click", () => {
+  document.body.classList.toggle("light");
+  localStorage.setItem(
+    "jarvis_theme",
+    document.body.classList.contains("light") ? "light" : "dark",
+  );
+  applySceneTheme();
+});
 initScene();
+applySceneTheme();
 buildGraph();
 pauseLabel();
 updateClock();

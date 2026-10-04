@@ -6,7 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Jarvis | Dashboard</title>
     <link rel="icon" href="/static/favicon.png" />
-    <link rel="stylesheet" href="/static/css/dashboard.css" />
+    <link rel="stylesheet" href="/static/css/theme.css?v=11" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=2" />
+    <link rel="stylesheet" href="/static/css/workspace.css?v=1" />
     <script type="importmap">
       { "imports": { "three": "/static/vendor/three/three.module.js" } }
     </script>
@@ -21,7 +23,7 @@
           alt=""
           width="28"
           height="28"
-        />JARVIS <span>CONTROL</span></a
+        />Jarvis <span>Workspace</span></a
       >
       <div class="connection">
         <span id="status-dot"></span
@@ -29,6 +31,13 @@
       </div>
       <div class="top-actions">
         <span id="username"></span
+        ><button
+          class="icon"
+          id="theme-toggle"
+          title="Hell/Dunkel umschalten"
+          aria-label="Hell/Dunkel umschalten"
+        >
+          <i data-lucide="sun"></i></button
         ><button
           class="icon"
           id="top-chat"
@@ -43,8 +52,8 @@
     </header>
     <main>
       <aside class="sidebar">
-        <div class="eyebrow">SYSTEM</div>
-        <h1>Dein Assistent.</h1>
+        <div class="eyebrow">JARVIS</div>
+        <h1>Arbeitsbereich</h1>
         <div class="metric">
           <span>Aktives Modell</span><strong id="model">Nicht geladen</strong
           ><small id="model-status">Status unbekannt</small>
@@ -99,7 +108,7 @@
       <section class="workspace" aria-label="Wissensnetz">
         <div class="scene-header">
           <div>
-            <div class="eyebrow">KNOWLEDGE</div>
+            <div class="eyebrow">WISSEN</div>
             <h2>Wissensnetz</h2>
           </div>
           <button

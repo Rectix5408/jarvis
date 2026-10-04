@@ -25,6 +25,7 @@ async function run() {
     for (const viewport of [
       { width: 1440, height: 1000 },
       { width: 390, height: 844 },
+      { width: 320, height: 740 },
     ]) {
       console.log(`Testing viewport ${viewport.width}`);
       const context = await browser.newContext({ viewport });
@@ -68,7 +69,11 @@ async function run() {
           return route.fulfill({
             json: {
               profiles: [
-                { id: "local", name: "Ollama", model: "qwen3:4b" },
+                {
+                  id: "local",
+                  name: "Ollama",
+                  model: "google/gemini-2.0-flash-001",
+                },
                 { id: "other", name: "Anderes Modell", model: "test-model" },
                 { id: "locked", name: "Gesperrt", locked: true },
               ],
@@ -100,7 +105,39 @@ async function run() {
       );
       console.log("Data and canvas ready");
       check(
-        (await page.locator("#model").textContent()) === "qwen3:4b",
+        await page
+          .locator("#model")
+          .evaluate((el) => el.scrollWidth <= el.clientWidth),
+        "Long model name fits",
+      );
+      check(
+        await page
+          .locator("#model")
+          .evaluate((el) => parseFloat(getComputedStyle(el).fontSize) <= 14),
+        "Compact model typography",
+      );
+      check(
+        (await page.locator("#model-status").getAttribute("data-status")) ===
+          "ok",
+        "Model status uses semantic state",
+      );
+      await page.locator("#theme-toggle").click();
+      check(
+        await page.evaluate(
+          () =>
+            document.body.classList.contains("light") &&
+            localStorage.getItem("jarvis_theme") === "light",
+        ),
+        "Light theme persists",
+      );
+      await page.screenshot({
+        path: `/tmp/jarvis-dashboard-light-${viewport.width}.png`,
+        fullPage: true,
+      });
+      await page.locator("#theme-toggle").click();
+      check(
+        (await page.locator("#model").textContent()) ===
+          "google/gemini-2.0-flash-001",
         "Real profile model shown",
       );
       check(
