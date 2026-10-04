@@ -462,6 +462,7 @@
         const promptToolGroup = document.getElementById('prompt-tool-group');
         const checkPromptTool = document.getElementById('profile-prompt-tool-calling');
         const inputTemperature = document.getElementById('profile-temperature');
+        const checkEconomy = document.getElementById('profile-economy-mode');
         const inputKey = document.getElementById('profile-api-key');
         const inputSessionKey = document.getElementById('profile-session-key');
         const apikeyHint = document.querySelector('.apikey-hint');
@@ -1611,6 +1612,7 @@
             selectProvider.value = profile ? profile.provider : 'google';
             inputUrl.value = profile ? profile.api_url : '';
             inputKey.value = '';
+            if (checkEconomy) checkEconomy.checked = profile?.economy_mode === true;
             if (inputSessionKey) inputSessionKey.value = '';
 
             // Eye-Icons zurücksetzen (Auge-auf = verborgen)
@@ -1723,6 +1725,17 @@
 
         // ── Neues Profil ──
         btnAddProfile.addEventListener('click', () => openEditView(null));
+        document.getElementById('btn-local-economy')?.addEventListener('click', () => {
+            openEditView(null);
+            selectProvider.value = 'openai_compatible';
+            inputUrl.value = 'http://ollama:11434/v1/chat/completions';
+            updateProviderUI();
+            inputName.value = 'Ollama (sparsam)';
+            inputKey.value = '';
+            inputModel.value = '';
+            if (checkEconomy) checkEconomy.checked = true;
+            inputModel.focus();
+        });
 
         // ── Profil speichern ──
         btnSaveProfile.addEventListener('click', async () => {
@@ -1751,6 +1764,7 @@
                 // Rohwert senden ("", "auto" oder Zahl als Text) – die Validierung
                 // und Begrenzung auf 0..2 macht das Backend (config._valid_temperature).
                 temperature: inputTemperature ? inputTemperature.value.trim() : '',
+                economy_mode: checkEconomy?.checked === true,
             };
 
             btnSaveProfile.textContent = window.t('common.saving');

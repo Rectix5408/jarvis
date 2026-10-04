@@ -1551,6 +1551,7 @@ certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "Jarvis CA" -i jarvis-ca.crt
                             <div id="prof-sect-list-body" class="kb-collapse-body">
                                 <div style="margin-bottom:10px;">
                                     <button class="btn-add-profile" id="btn-add-profile" data-i18n="profile.add_btn" style="margin:0;">+ Neues Profil</button>
+                                    <button class="btn-add-profile" id="btn-local-economy" type="button" style="margin:0;">+ Ollama-Profil</button>
                                 </div>
                                 <div id="profiles-container" class="profiles-list">
                                     <!-- Profil-Cards werden via JS erzeugt -->
@@ -1784,6 +1785,13 @@ certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "Jarvis CA" -i jarvis-ca.crt
                             </datalist>
                         </div>
                         <small class="tab-note" style="margin-top: 4px; opacity: 0.7; display: block;" data-i18n="profile.temp_hint">Die Temperature steuert, wie stark das Modell vom wahrscheinlichsten nächsten Wort abweicht: niedrige Werte liefern sachliche und gut reproduzierbare Antworten, hohe Werte mehr Abwechslung und Kreativität. Der Standard ist „auto“ – der Parameter wird dann gar nicht mitgesendet und der Anbieter entscheidet selbst; das ist nötig für aktuelle Claude-Modelle, die Temperature-Angaben mit einem Fehler ablehnen. Achtung: der Anbieter-Standard liegt bei vielen OpenAI-kompatiblen Servern und bei Gemini deutlich über 0.2, und ab etwa 0.7 zerfallen die JSON-Argumente von Werkzeugaufrufen zunehmend. Wer verlässliche Tool-Aufrufe braucht, trägt deshalb eine feste Zahl ein – 0.2 entspricht dem Verhalten vor Juli 2026. Erlaubt sind Werte von 0.0 bis 2.0; für reine Text- und Schreibaufgaben ohne Tools sind 0.7 bis 1.0 ein guter Ausgangspunkt.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-group" for="profile-economy-mode">
+                            <input type="checkbox" id="profile-economy-mode">
+                            <span>Sparmodus</span>
+                        </label>
                     </div>
 
                     <!-- Prompt-Tool-Calling (nur openai_compatible) -->
@@ -4377,7 +4385,7 @@ certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "Jarvis CA" -i jarvis-ca.crt
     <script src="/static/js/sessions.js?v=4"></script>
     <script src="/static/js/agent_roles.js?v=1"></script>
     <script src="/static/js/model_caps.js?v=6"></script>
-    <script src="/static/js/app.js?v=194"></script>
+    <script src="/static/js/app.js?v=195"></script>
 <!-- Avatar-Assistent (nur aktiv, wenn der Avatar-Skill eingeschaltet ist) -->
 <script src="/static/vendor/clippy/jquery-3.7.1.min.js"></script>
 <script src="/static/vendor/clippy/clippy.min.js"></script>

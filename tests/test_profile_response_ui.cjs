@@ -47,6 +47,21 @@ async function run() {
     w.document.getElementById('auth-session').checked = true;
     w.document.getElementById('auth-session').dispatchEvent(new w.Event('change'));
     assert.equal(button.hidden, true, 'No paid API test for browser session cookies');
+    w.document.getElementById('btn-local-economy').click();
+    assert.equal(provider.value, 'openai_compatible');
+    assert.equal(w.document.getElementById('profile-economy-mode').checked, true);
+    assert.equal(w.document.getElementById('profile-api-url').value, 'http://ollama:11434/v1/chat/completions');
+    assert.equal(w.document.getElementById('profile-api-key').value, '');
+    assert.equal(w.document.getElementById('profile-model-input').value, '');
+    w.document.getElementById('profile-model-input').value = 'installed-local-model';
+    w.document.getElementById('btn-save-profile').click(); await sleep(30);
+    const saved = calls.find(c => c.url === '/api/profiles' && c.options.method === 'POST');
+    assert.ok(saved, 'Local template can be saved through the existing profile API');
+    const localProfile = JSON.parse(saved.options.body);
+    assert.equal(localProfile.economy_mode, true);
+    assert.equal(localProfile.auth_method, 'api_key');
+    assert.equal(localProfile.api_key, '');
+    assert.equal(localProfile.session_key, '');
     console.log('Profile response UI: confirmation, authenticated request, success/error and session visibility passed.');
   } finally { w.close(); }
 }

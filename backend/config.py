@@ -624,6 +624,7 @@ class Config:
             # Sampling-Temperature. Standard "auto" = Parameter nicht senden,
             # der Anbieter entscheidet. Alternativ eine Zahl 0.0..2.0.
             "temperature": _valid_temperature(data.get("temperature", TEMPERATURE_AUTO)),
+            "economy_mode": data.get("economy_mode") is True,
             # Prompt-basiertes Tool-Calling. Stand bis 2026-07-27 in KEINER
             # Persistenz-Liste – der Schalter im Profilformular wirkte deshalb nie.
             "prompt_tool_calling": bool(data.get("prompt_tool_calling", False)),
@@ -642,7 +643,7 @@ class Config:
         for p in self.profiles:
             if p["id"] == profile_id:
                 for key in ["name", "provider", "model", "api_url", "api_key", "auth_method",
-                            "session_key", "reasoning_effort", "temperature",
+                            "session_key", "reasoning_effort", "temperature", "economy_mode",
                             "prompt_tool_calling", "allowed_users", "allowed_group"]:
                     if key in data:
                         val = data[key]
@@ -655,6 +656,8 @@ class Config:
                             val = _valid_temperature(val)
                         elif key == "prompt_tool_calling":
                             val = bool(val)
+                        elif key == "economy_mode":
+                            val = val is True
                         elif key in ("api_key", "session_key", "api_url", "model"):
                             val = _clean_profile_str(val)   # siehe create_profile
                         p[key] = val

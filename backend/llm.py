@@ -258,7 +258,7 @@ def _llm_timeout() -> "httpx.Timeout":
     return httpx.Timeout(float(total), connect=10.0, read=float(total), write=30.0)
 
 
-def _llm_max_tokens() -> int:
+def _llm_max_tokens(economy_mode: bool = False) -> int:
     """Obergrenze fuer die Antwortlaenge (max_tokens) OpenAI-kompatibler Aufrufe.
 
     Wichtig bei Reasoning-Modellen (z.B. Qwen3): ohne Cap kann der Server einen
@@ -269,9 +269,10 @@ def _llm_max_tokens() -> int:
     griff hier immer der getattr-Default 8192."""
     try:
         from backend.config import config
-        return max(256, min(int(getattr(config, "LLM_MAX_TOKENS", 8192) or 8192), 131072))
+        limit = max(256, min(int(getattr(config, "LLM_MAX_TOKENS", 8192) or 8192), 131072))
+        return min(limit, 2048) if economy_mode else limit
     except Exception:
-        return 8192
+        return 2048 if economy_mode else 8192
 
 
 # Profil-Sonderwert UND Standard: Parameter gar nicht senden, der Anbieter
@@ -678,6 +679,8 @@ class GeminiProvider(LLMProvider):
                 "system_instruction": system_prompt,
                 "tools": gemini_tools,
             }
+            if getattr(self, "economy_mode", False):
+                kwargs["max_output_tokens"] = _llm_max_tokens(True)
             if _temp is not None:      # None = Feld weglassen (Profil "auto")
                 kwargs["temperature"] = _temp
             if with_thinking is None:
@@ -910,7 +913,7 @@ class OpenAICompatibleProvider(LLMProvider):
             "messages": messages,
             "stream": False,   # Kein Streaming – wir lesen die komplette JSON-Antwort
             # Cap gegen endlose Reasoning-Laeufe (sonst Read-Timeout bei Qwen3 & Co.)
-            "max_tokens": _llm_max_tokens(),
+            "max_tokens": _llm_max_tokens(getattr(self, "economy_mode", False)),
         }
         if temperature is not None:    # None = Feld weglassen (Profil "auto")
             payload["temperature"] = temperature
@@ -1145,7 +1148,8 @@ class OpenAICompatibleProvider(LLMProvider):
                 messages.append({"role": role, "content": "\n".join(parts_text)})
             messages.extend(tool_result_msgs)
 
-        payload = {"model": model, "messages": messages, "stream": False}
+        payload = {"model": model, "messages": messages, "stream": False,
+                   "max_tokens": _llm_max_tokens(getattr(self, "economy_mode", False))}
         if temperature is not None:    # None = Feld weglassen (Profil "auto")
             payload["temperature"] = temperature
         self._apply_reasoning(payload, reasoning_effort)
@@ -1376,7 +1380,7 @@ class AnthropicProvider(LLMProvider):
         def _build_kwargs(with_reasoning: bool) -> dict:
             kw: dict = {
                 "model": model,
-                "max_tokens": 8096,
+                "max_tokens": _llm_max_tokens(True) if getattr(self, "economy_mode", False) else 8096,
                 "system": system_prompt,
                 "messages": messages,
             }
@@ -1401,7 +1405,7 @@ class AnthropicProvider(LLMProvider):
                 # gesetzt: die Modelle, die effort kennen, lehnen Sampling-Parameter ab.
                 kw["thinking"] = {"type": "adaptive"}
                 kw["output_config"] = {"effort": _ANTHROPIC_EFFORT[_effort]}
-                if _effort in ("high", "max"):
+                if _effort in ("high", "max") and not getattr(self, "economy_mode", False):
                     # max_tokens deckelt Denk- UND Antworttoken gemeinsam.
                     kw["max_tokens"] = max(kw["max_tokens"], _ANTHROPIC_THINKING_MIN_TOKENS)
             return kw
@@ -1719,7 +1723,8 @@ def provider_fuer_lauf(prompt_tool_calling: bool | None = None):
                              config.current_api_url,
                              auth_method=config.current_auth_method,
                              session_key=config.current_session_key,
-                             prompt_tool_calling=ptc),
+                             prompt_tool_calling=ptc,
+                             economy_mode=bool((config.active_profile or {}).get("economy_mode"))),
                 config.current_model)
     ptc = (bool(p.get("prompt_tool_calling")) if prompt_tool_calling is None
            else bool(prompt_tool_calling))
@@ -1728,7 +1733,8 @@ def provider_fuer_lauf(prompt_tool_calling: bool | None = None):
                          p.get("api_url") or config.current_api_url,
                          auth_method=p.get("auth_method") or "api_key",
                          session_key=clean_api_key(p.get("session_key") or ""),
-                         prompt_tool_calling=ptc),
+                         prompt_tool_calling=ptc,
+                         economy_mode=p.get("economy_mode") is True),
             p.get("model") or config.current_model)
 
 
@@ -1739,20 +1745,24 @@ def get_provider(
     auth_method: str = "api_key",
     session_key: str = None,
     prompt_tool_calling: bool = False,
+    economy_mode: bool = False,
 ) -> LLMProvider:
+    def configured(provider):
+        provider.economy_mode = economy_mode is True
+        return provider
     name = provider_name.lower()
     if name == "google":
-        return GeminiProvider(api_key)
+        return configured(GeminiProvider(api_key))
     elif name == "openrouter":
-        return OpenRouterProvider(api_key, base_url=api_url) if api_url else OpenRouterProvider(api_key)
+        return configured(OpenRouterProvider(api_key, base_url=api_url) if api_url else OpenRouterProvider(api_key))
     elif name == "anthropic":
         if auth_method == "session" and session_key:
-            return AnthropicSessionProvider(session_key)
-        return AnthropicProvider(api_key)
+            return configured(AnthropicSessionProvider(session_key))
+        return configured(AnthropicProvider(api_key))
     elif name == "openai_compatible":
-        return OpenAICompatibleProvider(
+        return configured(OpenAICompatibleProvider(
             api_key,
             base_url=api_url or "http://localhost:11434/v1/chat/completions",
             prompt_tool_calling=prompt_tool_calling,
-        )
+        ))
     raise ValueError(f"Unbekannter Provider: {provider_name}")

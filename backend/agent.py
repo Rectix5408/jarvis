@@ -992,6 +992,7 @@ KRITISCH – Autonomie-Regeln:
             auth_method=self.current_auth_method,
             session_key=self.current_session_key,
             prompt_tool_calling=self.current_prompt_tool_calling,
+            economy_mode=bool((self._eff_profile or {}).get("economy_mode")),
         )
 
     # ─── Benutzerbezogenes LLM-Profil (Fassade, Fallback: global) ──────────
@@ -1208,12 +1209,16 @@ KRITISCH – Autonomie-Regeln:
         die Welt, keine Verhaltensregel – ein Rollen- oder Sub-Agent braucht das
         Datum genauso (Erinnerungen, Fristen, Dateinamen, Folien-Kopfzeilen).
         """
+        economy = ("\n\nArbeite token-sparsam: Antworte knapp, ausser die Aufgabe verlangt Details. "
+                   "Wiederhole keine bereits vorliegenden Ergebnisse. Vermeide unnoetige Tool-Aufrufe, "
+                   "aber ueberspringe niemals Sicherheitspruefungen, Freigaben oder erforderliche Recherche. "
+                   "Behaupte keine Ausfuehrung ohne Tool-Ergebnis.") if (self._eff_profile or {}).get("economy_mode") else ""
         if getattr(self, "_role_prompt", ""):
-            return self._role_prompt + self._zeit_hinweis()
+            return self._role_prompt + self._zeit_hinweis() + economy
         if self.is_sub_agent:
-            return self.SUB_AGENT_PROMPT + self._zeit_hinweis()
+            return self.SUB_AGENT_PROMPT + self._zeit_hinweis() + economy
         return (self.SYSTEM_PROMPT + self._fehlende_pflicht_tools()
-                + self._role_hinweis() + self._zeit_hinweis())
+                + self._role_hinweis() + self._zeit_hinweis() + economy)
 
     # Werkzeuge, auf denen der SYSTEM_PROMPT ausdruecklich BESTEHT, die aber aus
     # SKILLS kommen und damit fehlen koennen. Ohne den Hinweis unten verlangt der
@@ -1654,6 +1659,7 @@ KRITISCH – Autonomie-Regeln:
             auth_method=self.current_auth_method,
             session_key=self.current_session_key,
             prompt_tool_calling=self.current_prompt_tool_calling,
+            economy_mode=bool((self._eff_profile or {}).get("economy_mode")),
         )
 
         await self._send_status(ws, f"🚀 Starte Aufgabe: {task_text}")
@@ -1847,6 +1853,8 @@ KRITISCH – Autonomie-Regeln:
                         except Exception:  # noqa: BLE001
                             chat_history = []
                     self._user_histories[_history_key] = chat_history
+            if (self._eff_profile or {}).get("economy_mode"):
+                chat_history[:] = await self._compress_history(chat_history, system_prompt)
             self._current_chat_history  = chat_history  # Live-Referenz für Context-Stats-API
             # Schnappschuss des Verlaufs VOR diesem Lauf. Bricht der Lauf ohne
             # Antwort ab, wird darauf zurueckgesetzt: sonst bleibt die Nutzerfrage
@@ -2603,6 +2611,7 @@ KRITISCH – Autonomie-Regeln:
             auth_method=self.current_auth_method,
             session_key=self.current_session_key,
             prompt_tool_calling=self.current_prompt_tool_calling,
+            economy_mode=bool((self._eff_profile or {}).get("economy_mode")),
         )
 
         # System-Prompt zusammenbauen
@@ -3504,12 +3513,24 @@ KRITISCH – Autonomie-Regeln:
     async def _compress_history(self, chat_history: list, system_prompt: str) -> list:
         """Komprimiert lange Chat-Historien: Zusammenfassung der älteren Nachrichten."""
         # Nur komprimieren wenn über dem Schwellwert
-        if len(chat_history) <= self._compress_threshold:
+        economy = bool((self._eff_profile or {}).get("economy_mode"))
+        threshold = min(self._compress_threshold, 12) if economy else self._compress_threshold
+        if len(chat_history) <= threshold:
             return chat_history
 
         # Letzte 4 Nachrichten behalten
         keep = chat_history[-4:]
         to_summarize = chat_history[:-4]
+        if economy:
+            # Keep complete user turns so a tool result never loses its matching call.
+            turns = [i for i, entry in enumerate(chat_history)
+                     if getattr(entry, "role", None) == "user"
+                     and not any(getattr(part, "function_response", None)
+                                 for part in (getattr(entry, "parts", None) or []))]
+            if len(turns) < 3 or turns[-2] == 0:
+                return chat_history
+            keep = chat_history[turns[-2]:]
+            to_summarize = chat_history[:turns[-2]]
 
         # Bisherigen Dialog für die Zusammenfassung als Text extrahieren.
         # WICHTIG: Tool-Aufrufe und Tool-Ergebnisse MUESSEN mit aufgenommen werden,
@@ -3543,7 +3564,7 @@ KRITISCH – Autonomie-Regeln:
                 pass
 
         if not dialog_text:
-            return keep  # Nichts zu komprimieren
+            return chat_history if economy else keep  # Nichts zu komprimieren
 
         summary_prompt = (
             "Fasse den folgenden Gesprächsabschnitt in maximal 300 Wörtern zusammen. "
@@ -3581,7 +3602,7 @@ KRITISCH – Autonomie-Regeln:
             print(f"[AGENT {self.agent_id}] History-Kompression fehlgeschlagen: {e}", flush=True)
 
         # Fallback: nur letzte Einträge behalten
-        return keep
+        return chat_history if economy else keep
 
     async def _await_or_stop(self, coro):
         """Wartet auf ``coro``, bricht die Wartung aber SOFORT ab, sobald stop()
