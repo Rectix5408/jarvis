@@ -1283,6 +1283,9 @@
             if (tabVision) { tabVision.style.display = 'none'; tabVision.classList.remove('active'); }
             if (tabTelemetry) { tabTelemetry.style.display = 'none'; tabTelemetry.classList.remove('active'); }
             modal.classList.add('open');
+            const requestedTab = location.hash.slice(1);
+            const requestedButton = [...settingsTabs].find(b => b.dataset.settingsTab === requestedTab);
+            if (requestedButton && getComputedStyle(requestedButton).display !== 'none') requestedButton.click();
         };
         const closeModal = () => {
             modal.classList.remove('open');
@@ -1292,6 +1295,11 @@
         // Von _enterSettingsPage genutzt, damit /settings das Modal ohne den
         // (entfernten) Header-Zahnrad-Button oeffnen kann.
         window._openSettingsModal = openModal;
+        window.addEventListener('hashchange', () => {
+            if (!modal.classList.contains('open')) return;
+            const requestedButton = [...settingsTabs].find(b => b.dataset.settingsTab === location.hash.slice(1));
+            if (requestedButton && getComputedStyle(requestedButton).display !== 'none') requestedButton.click();
+        });
         if (btnOpen) btnOpen.addEventListener('click', openModal);
         btnClose.addEventListener('click', closeModal);
         // Kein Schließen bei Klick außerhalb oder versehentlichem Drag – nur explizit via X-Button

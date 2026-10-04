@@ -2136,6 +2136,7 @@ async def support_api_doc():
 
 
 @app.get("/chat", response_class=HTMLResponse)
+@app.get("/assistant", response_class=HTMLResponse)
 async def chat_page():
     """Chat-UI ausliefern (separater Web-Zugang)."""
     chat_file = FRONTEND_DIR / "chat.html"

@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.assistant-workspace .chat-main { display: grid; grid-template-columns: minmax(0, 1fr) 280px; grid-template-rows: auto auto minmax(0, 1fr) auto; min-width: 0; }
+.assistant-workspace .chat-main > .topbar { grid-column: 1 / -1; grid-row: 1; }
+.assistant-workspace #msg-select-bar { grid-column: 1; grid-row: 2; }
+.assistant-workspace #messages { grid-column: 1; grid-row: 3; min-height: 0; min-width: 0; }
+.assistant-workspace .input-bar { grid-column: 1; grid-row: 4; padding: 16px; min-width: 0; }
+.assistant-workspace .input-row { min-width: 0; }
+.assistant-workspace #kb-filter-slot { display: flex; flex-wrap: wrap; }
+.assistant-context { grid-column: 2; grid-row: 2 / 5; border-left: 1px solid var(--border-color); padding: 24px 20px; overflow-y: auto; min-width: 0; background: var(--bg-secondary); }
+.assistant-context h2 { font-size: 18px; font-weight: 650; margin: 0; }
+.assistant-core { width: 100%; height: 260px; }
+.assistant-core canvas { display: block; width: 100%; height: 100%; }
+.assistant-core-state { text-align: center; font-size: 16px; margin: 0 0 32px; }
+.assistant-context[data-state=working] .assistant-core-state { color: var(--agent-activity); }
+.assistant-context[data-state=error] .assistant-core-state { color: var(--danger); }
+.assistant-context-label { display: block; font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 24px; }
+.assistant-context-detail { margin: 12px 0 24px; line-height: 1.7; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant-context a { color: var(--accent-hover); font-size: 12px; }
+@media (max-width: 1400px) { .assistant-workspace .chat-sidebar { width: 200px; } .assistant-workspace .chat-main { grid-template-columns: minmax(0, 1fr) 220px; } .assistant-context { padding: 20px 16px; } .assistant-core { height: 220px; } }
+@media (max-width: 1100px) { .assistant-workspace .chat-main { display: flex; flex-direction: column; } .assistant-context { display: none; } }

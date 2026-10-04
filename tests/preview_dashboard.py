@@ -19,7 +19,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             self.send_error(503, "Static preview has no backend")
             return
         pages = {"/": "settings.html", "/dashboard": "dashboard.html",
-                 "/chat": "chat.html", "/portal": "portal.html",
+                 "/chat": "chat.html", "/assistant": "chat.html", "/portal": "portal.html",
                  "/settings": "settings.html", "/wissen": "wissen.html",
                  "/userchat": "userchat.html"}
         if route in pages:

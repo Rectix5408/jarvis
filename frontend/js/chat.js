@@ -9,6 +9,7 @@
     // Visual status only: never send conversation text, credentials or executable commands to the parent.
     function cockpitActivity(state) {
         document.body.dataset.activity = state;
+        window.dispatchEvent(new CustomEvent('jarvis:activity', { detail: { state } }));
         if (window.parent !== window) window.parent.postMessage({ type: 'jarvis:activity', state }, window.location.origin);
     }
 
@@ -43,7 +44,7 @@
 
     // TTS-State
     let ttsEnabled = false;
-    let _ttsAudio = null;
+    const _speechOutput = new window.JarvisAudioOutput(cockpitActivity);
     let _ttsBuf = '';              // sammelt Bot-Text während Streaming
 
     // Feedback-State
@@ -146,31 +147,15 @@
     }
 
     function stopSpeak() {
-        if (_ttsAudio) { _ttsAudio.pause(); _ttsAudio.src = ''; _ttsAudio = null; }
-        cockpitActivity('idle');
+        _speechOutput.stop();
     }
 
     async function speak(text) {
         if (!ttsEnabled || !text) return;
         const clean = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
         if (!clean) return;
-        stopSpeak();
         const voice = chatTtsVoice?.value || '';
-        try {
-            const resp = await fetch('/api/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ text: clean, voice })
-            });
-            if (!resp.ok) return;
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            _ttsAudio = new Audio(url);
-            _ttsAudio.onplaying = () => cockpitActivity('speaking');
-            _ttsAudio.onended = () => { URL.revokeObjectURL(url); _ttsAudio = null; cockpitActivity('idle'); };
-            _ttsAudio.onerror = () => { URL.revokeObjectURL(url); _ttsAudio = null; cockpitActivity('error'); };
-            _ttsAudio.play().catch(() => { URL.revokeObjectURL(url); _ttsAudio = null; cockpitActivity('error'); });
-        } catch (e) { console.warn('[TTS] Fehler:', e); }
+        await _speechOutput.speak(clean, voice, token);
     }
 
     if (btnTtsChat) {
@@ -474,6 +459,7 @@
     };
 
     function logout() {
+        stopSpeak();
         // Abmeldung beim Server melden, SOLANGE das Token noch gilt – danach
         // ist sie nicht mehr authentifizierbar. Ohne dieses Signal kann der
         // Server "abgemeldet" nicht von "still geworden" unterscheiden.
@@ -804,6 +790,7 @@
     function handleMessage(msg) {
         switch (msg.type) {
             case 'status':
+                if (!msg.intermediate) window.dispatchEvent(new CustomEvent('jarvis:status', { detail: { message: msg.message || '' } }));
                 handleStatus(msg);
                 break;
 
@@ -2542,6 +2529,7 @@
                     // Wenn Text im Feld → direkt senden
                     if (msgInput && msgInput.value.trim()) sendMessage();
                 } else {
+                    stopSpeak();
                     isRecording = true;
                     btnMic.classList.add('recording');
                     recognition.start();
@@ -2552,6 +2540,8 @@
             btnMic.style.display = 'none';
         }
     }
+
+    window.addEventListener('pagehide', stopSpeak);
 
     // ═════════════════════════════════════════════════════════════
     //  FEEDBACK
