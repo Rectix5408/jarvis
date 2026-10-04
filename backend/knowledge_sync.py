@@ -1,5 +1,7 @@
 """Pull-Synchronisation von Wissensordnern zwischen Jarvis-Standorten.
 
+Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed product-license gates.
+
 Eine Einbahnstrasse: Standort 3 HOLT einen Ordner, den ein Administrator an
 Standort 1 oder 2 freigegeben hat. Der Geber schickt nie von sich aus etwas –
 alle Verbindungen gehen vom Nehmer aus. Damit funktioniert das auch, wenn der
@@ -32,8 +34,6 @@ Grundregeln, die den Rest des Moduls erklaeren:
   aufloesen laesst, wird verworfen (nicht "bereinigt"); ein Zertifikat, das
   nicht zum gespeicherten Fingerabdruck passt, bricht den Lauf ab; ein
   entzogener Token laesst die lokale Kopie stehen und meldet den Grund.
-* **Fail-closed bei der Lizenz.** Mehr-Standort-Betrieb ist ENTERPRISE; ohne
-  das Merkmal laeuft kein Sync (und der Container sagt es).
 
 Persistenz: ``data/knowledge_sync.json`` (0640, in den Sandbox-Sperrlisten).
 Die Datei enthaelt die Token FREMDER Standorte im Klartext – sie ist damit so
@@ -896,29 +896,11 @@ def schreibsperre(rel_path: str) -> str:
 
 
 def gespiegelte_dateien() -> int:
-    """Anzahl gespiegelter Dateien (Stand des letzten Laufs).
-
-    Grundlage der Lizenz-Ausnahme: gespiegelte Dateien zaehlen nicht gegen die
-    Wissensdatei-Grenze, weil sie am Geber schon lizenziert sind. Bewusst der
-    Stand des letzten Laufs statt eines eigenen Verzeichnis-Durchlaufs – die
-    Zaehlung haengt an `anzahl_rag()` und damit an jeder Upload-Pruefung.
-    """
+    """Anzahl gespiegelter Dateien (Stand des letzten Laufs)."""
     with _lock:
         return sum(int(p.get("file_count", 0) or 0) for p in _laden()["peers"])
 
 
-# ─── Lizenz ─────────────────────────────────────────────────────────────────
-
-def erlaubt() -> tuple[bool, str]:
-    """Darf dieser Server Standort-Synchronisation nutzen? (ENTERPRISE)"""
-    try:
-        from backend import license as lic
-        return lic.standort_sync_erlaubt()
-    except Exception:  # noqa: BLE001
-        # Fail-open NUR hier: ist das Lizenzmodul nicht ladbar, ist das ein
-        # Installationsfehler und keine Aussage ueber die Lizenz. Alle harten
-        # Schranken (Token, Pfade, Spiegel) sind davon unabhaengig.
-        return True, ""
 
 
 # ─── HTTPS mit Fingerabdruck-Bindung ────────────────────────────────────────
@@ -1050,9 +1032,6 @@ def sync_peer(peer_id: str, ausloeser: str = "manuell") -> dict:
     laden und pruefen → entfernt geloeschte lokal entfernen → Gruppen-Zuordnung
     setzen → Index nachziehen.
     """
-    ok, grund = erlaubt()
-    if not ok:
-        return {"ok": False, "error": grund, "license": True}
     peer = get_peer(peer_id)
     if peer is None:
         return {"ok": False, "error": "Standort nicht gefunden."}
@@ -1448,9 +1427,6 @@ def automatik_lauf() -> dict:
     zu ziehen und danach mehrfach zu indizieren waere teurer als eine Runde
     Warten.
     """
-    ok, grund = erlaubt()
-    if not ok:
-        return {"ok": False, "skipped": "license", "error": grund}
     faellig = faellige_standorte()
     if not faellig:
         return {"ok": True, "synced": []}
