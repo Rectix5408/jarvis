@@ -1,0 +1,33 @@
+# Local-model deployment for the Reinhold-Jesse/jarvis fork.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local-llm.yml up -d --build
+services:
+  jarvis:
+    image: jarvis-local:latest
+    build:
+      context: .
+    pull_policy: build
+    env_file:
+      - .env
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-16384}"
+      OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:-10m}"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  ollama-models:

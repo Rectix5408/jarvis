@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Tests fuer die Pull-Synchronisation von Wissensordnern (backend/knowledge_sync.py).
 
+Modified in Reinhold-Jesse/jarvis on 2026-10-04: test sync without product licensing.
+
 Laeuft ohne fastapi und ohne httpx-Netzzugriff:
 
-* ``backend.config``, ``backend.tools.knowledge``, ``backend.knowledge_groups``
-  und ``backend.license`` werden als Attrappen in ``sys.modules`` gelegt. Der
+* ``backend.config``, ``backend.tools.knowledge`` und
+  ``backend.knowledge_groups`` werden als Attrappen in ``sys.modules`` gelegt. Der
   ECHTE ``backend.config``-Import wuerde beim Laden die LIVE-``settings.json``
   migrieren und zurueckschreiben (dieselbe Falle wie in test_shell_redirects.py).
 * ``httpx`` wird durch einen Client ersetzt, der die beiden Pull-Endpunkte
@@ -90,16 +92,11 @@ _cfgmod = types.ModuleType("backend.config")
 _cfgmod.config = _config
 _cfgmod.PROJECT_ROOT = TMP
 
-_lic = types.ModuleType("backend.license")
-_lic._erlaubt = True
-_lic.standort_sync_erlaubt = lambda: ((True, "") if _lic._erlaubt
-                                      else (False, "ENTERPRISE erforderlich"))
 
 import backend  # noqa: E402  (leichtes Paket-Init)
 sys.modules["backend.tools.knowledge"] = _kn
 sys.modules["backend.knowledge_groups"] = _kg
 sys.modules["backend.config"] = _cfgmod
-sys.modules["backend.license"] = _lic
 
 from backend import knowledge_sync as ks  # noqa: E402
 
@@ -331,15 +328,10 @@ if symlink_moeglich:
           "vorhandener Symlink wird nicht beschrieben")
     (wurzel / "link.md").unlink()
 
-# ── 8. Lizenz ───────────────────────────────────────────────────────────────
-section("8. Lizenz-Gate")
-_lic._erlaubt = False
-ok, grund = ks.erlaubt()
-check(ok is False and "ENTERPRISE" in grund, "ohne Merkmal gesperrt")
-bericht = ks.sync_peer(peer["id"])
-check(bericht["ok"] is False and bericht.get("license"), "Sync laeuft nicht ohne Lizenz")
-check(ks.automatik_lauf().get("skipped") == "license", "Automatik laeuft nicht ohne Lizenz")
-_lic._erlaubt = True
+# ── 8. Keine Produktlizenz-Abhaengigkeit ────────────────────────────────────
+section("8. Ohne Produktlizenz")
+check("backend.license" not in sys.modules, "kein Lizenzmodul geladen")
+check(not hasattr(ks, "erlaubt"), "kein Lizenz-Gate im Sync-Modul")
 
 # ── 9. Sync gegen die echten Geber-Funktionen ───────────────────────────────
 section("9. Sync (echte Differenz, Pruefsumme, Loeschung)")
@@ -571,6 +563,16 @@ b = ks.sync_peer(peer["id"])
 check(b["ok"] is False and "pausiert" in b["error"], "pausierter Standort synchronisiert nicht")
 ks.update_peer(peer["id"], state="active")
 
+# Automatic sync executes the same authorized transfer without a product key.
+zeit = ks._jetzt
+ks._jetzt = lambda: zeit() + 86400
+try:
+    auto = ks.automatik_lauf()
+    check(auto["synced"] == [peer["id"]] and auto["report"]["ok"],
+          "automatischer Sync ohne Produktlizenz erfolgreich")
+finally:
+    ks._jetzt = zeit
+
 # ── 10. Persistenz ──────────────────────────────────────────────────────────
 section("10. Persistenz und Rechte")
 check(ks.STATE_PATH.is_file(), "Zustandsdatei wurde geschrieben")
@@ -650,13 +652,8 @@ for liste in ("_APP_DENY_REL", "PRIVATE_FILES"):
     check("knowledge_sync.json" in src_sb[i:i + 2500], f"{liste} enthaelt knowledge_sync.json")
 check("knowledge_sync\\.json" in src_sb, "SHELL_SECRET_PATHS kennt knowledge_sync.json")
 
-src_lic = (ROOT / "backend" / "license.py").read_text(encoding="utf-8")
-check(src_lic.count('"standort_sync": False') == 2
-      and '"standort_sync": True' in src_lic,
-      "standort_sync nur in ENTERPRISE")
-check("def standort_sync_erlaubt" in src_lic, "Lizenz-Gate vorhanden")
-src_enf = (ROOT / "backend" / "license_enforce.py").read_text(encoding="utf-8")
-check("gespiegelte_dateien" in src_enf, "anzahl_rag zieht gespiegelte Dateien ab")
+check(not (ROOT / "backend" / "license.py").exists(), "Produktlizenz-Modul entfernt")
+check(not (ROOT / "backend" / "license_enforce.py").exists(), "Lizenz-Durchsetzung entfernt")
 
 src_we = (ROOT / "backend" / "web_extractor.py").read_text(encoding="utf-8")
 check("_ist_spiegel(rel)" in src_we, "Extraktor legt keine Extrakte in einen Spiegel")

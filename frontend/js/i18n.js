@@ -1,3 +1,4 @@
+// Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed product-license translations.
 /**
  * Jarvis i18n – Deutsch / English UI Übersetzungen
  *
@@ -723,7 +724,6 @@ const _I18N = {
         'roles.effort_default':     'Vorgabe (Profil/global)',
         'roles.confirm_del':        'Rolle wirklich löschen?',
         'roles.err_admin':          'Nur für Administratoren.',
-        'roles.profile_limit':      'Diese Lizenz erlaubt nur ein LLM-Profil – ein eigenes Modell je Rolle setzt eine ENTERPRISE-Lizenz voraus.',
         'roles.f_id':               'Kennung (unveränderlich)',
         'roles.f_name':             'Anzeigename',
         'roles.f_desc':             'Beschreibung – daran erkennt der Hauptagent die Zuständigkeit',
@@ -737,28 +737,6 @@ const _I18N = {
         'profile.section_key':      'Agent API Key',
         'profile.section_ssl':      'HTTPS / SSL-Zertifikat',
 
-        // ── Lizenz ────────────────────────────────────────────
-        'license.section':          'Lizenz',
-        'license.loading':          'Lizenz wird geladen…',
-        'license.level':            'Stufe',
-        'license.valid_until':      'gültig bis',
-        'license.unlimited':        'unbegrenzt',
-        'license.days':             'Tage',
-        'license.grace':            'Grenzen greifen in {n} Tagen',
-        'license.last_check':       'zuletzt geprüft',
-        'license.profiles':         'Profile',
-        'license.skills':           'Skills',
-        'license.users':            'Benutzer',
-        'license.rag':              'Wissensdateien',
-        'license.updates':          'Updates',
-        'license.hwid_label':       'Hardware-Kennung dieses Systems',
-        'license.key_label':        'Lizenzschlüssel',
-        'license.copy':             'Kopieren',
-        'license.save':             'Schlüssel eintragen',
-        'license.check':            'Jetzt prüfen',
-        'license.clear':            'Entfernen',
-        'license.confirm_clear':    'Lizenzschlüssel entfernen? Das System läuft danach mit den FREE-Grenzen: keine Software-Updates, ein LLM-Profil, fünf aktive Skills, fünf Benutzer und 50 Dateien in der Wissensdatenbank.',
-        'license.hint':             'Der Lizenzschlüssel wird vom Anbieter ausgestellt und ist an dieses System gebunden. Damit die gekaufte Stufe wirksam wird, muss die oben angezeigte Hardware-Kennung beim Anbieter hinterlegt sein – bis dahin läuft das System als FREE. Der Status (Gültigkeit, Widerruf, Stufenänderung) wird täglich beim Anbieter geprüft; ist der Prüfdienst vorübergehend nicht erreichbar, gilt der zuletzt bekannte Stand noch 14 Tage weiter. Ohne gültige Lizenz gelten die FREE-Grenzen: keine Software-Updates, ein LLM-Profil, fünf aktive Skills, fünf Benutzer und 50 Dateien in der Wissensdatenbank.',
 
         // ── Security Form Labels ──────────────────────────────
         'security.section_pw':      'Kennwort ändern',
@@ -3181,7 +3159,6 @@ const _I18N = {
         'roles.effort_default':     'Default (profile/global)',
         'roles.confirm_del':        'Really delete this role?',
         'roles.err_admin':          'Administrators only.',
-        'roles.profile_limit':      'This license allows only one LLM profile \u2013 a dedicated model per role requires an ENTERPRISE license.',
         'roles.f_id':               'ID (cannot be changed)',
         'roles.f_name':             'Display name',
         'roles.f_desc':             'Description \u2013 how the main agent recognises what this role is for',
@@ -3195,28 +3172,6 @@ const _I18N = {
         'profile.section_key':      'Agent API Key',
         'profile.section_ssl':      'HTTPS / SSL Certificate',
 
-        // ── License ───────────────────────────────────────────
-        'license.section':          'License',
-        'license.loading':          'Loading license…',
-        'license.level':            'Tier',
-        'license.valid_until':      'valid until',
-        'license.unlimited':        'unlimited',
-        'license.days':             'days',
-        'license.grace':            'limits take effect in {n} days',
-        'license.last_check':       'last checked',
-        'license.profiles':         'Profiles',
-        'license.skills':           'Skills',
-        'license.users':            'Users',
-        'license.rag':              'Knowledge files',
-        'license.updates':          'Updates',
-        'license.hwid_label':       'Hardware ID of this system',
-        'license.key_label':        'License key',
-        'license.copy':             'Copy',
-        'license.save':             'Apply key',
-        'license.check':            'Check now',
-        'license.clear':            'Remove',
-        'license.confirm_clear':    'Remove the license key? The system will then run with the FREE limits: no software updates, one LLM profile, five active skills, five users and 50 files in the knowledge base.',
-        'license.hint':             'The license key is issued by the vendor and is bound to this system. For the purchased tier to take effect, the hardware ID shown above must be registered with the vendor – until then the system runs as FREE. Status (validity, revocation, tier changes) is checked with the vendor daily; if the check service is temporarily unreachable, the last known state stays valid for another 14 days. Without a valid license the FREE limits apply: no software updates, one LLM profile, five active skills, five users and 50 files in the knowledge base.',
 
         // ── Security Form Labels ──────────────────────────────
         'security.section_pw':      'Change Password',

@@ -1,0 +1,193 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0; added for this fork, 2026-10-04. -->
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jarvis | Dashboard</title>
+    <link rel="icon" href="/static/favicon.png" />
+    <link rel="stylesheet" href="/static/css/dashboard.css" />
+    <script type="importmap">
+      { "imports": { "three": "/static/vendor/three/three.module.js" } }
+    </script>
+    <script src="/static/vendor/lucide/lucide.min.js" defer></script>
+    <script type="module" src="/static/js/dashboard.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/portal"
+        ><img
+          src="/static/favicon_32.png"
+          alt=""
+          width="28"
+          height="28"
+        />JARVIS <span>CONTROL</span></a
+      >
+      <div class="connection">
+        <span id="status-dot"></span
+        ><span id="connection" role="status">Verbinde ...</span>
+      </div>
+      <div class="top-actions">
+        <span id="username"></span
+        ><button
+          class="icon"
+          id="top-chat"
+          title="Assistent oeffnen"
+          aria-label="Assistent oeffnen"
+        >
+          <i data-lucide="messages-square"></i></button
+        ><a class="icon" href="/portal" title="Portal" aria-label="Portal"
+          ><i data-lucide="layout-grid"></i
+        ></a>
+      </div>
+    </header>
+    <main>
+      <aside class="sidebar">
+        <div class="eyebrow">SYSTEM</div>
+        <h1>Dein Assistent.</h1>
+        <div class="metric">
+          <span>Aktives Modell</span><strong id="model">Nicht geladen</strong
+          ><small id="model-status">Status unbekannt</small>
+        </div>
+        <label class="profile-label" for="profile">Modellprofil</label
+        ><select id="profile" disabled>
+          <option>Keine Profile geladen</option>
+        </select>
+        <div class="metric compact">
+          <span>CPU</span><strong id="cpu">--</strong
+          ><progress
+            id="cpu-meter"
+            max="100"
+            value="0"
+            aria-label="CPU-Auslastung"
+          ></progress>
+        </div>
+        <div class="counts">
+          <div>
+            <strong id="file-count">--</strong><span>Wissensdateien</span>
+          </div>
+          <div><strong id="group-count">--</strong><span>Gruppen</span></div>
+        </div>
+        <nav aria-label="Arbeitsbereiche">
+          <button id="open-chat">
+            <i data-lucide="messages-square"></i>Assistent<i
+              data-lucide="arrow-up-right"
+            ></i>
+          </button>
+          <a href="/wissen"
+            ><i data-lucide="network"></i>Wissen<i
+              data-lucide="arrow-up-right"
+            ></i
+          ></a>
+          <a href="/userchat"
+            ><i data-lucide="users"></i>Benutzer-Chat<i
+              data-lucide="arrow-up-right"
+            ></i
+          ></a>
+          <a href="/settings" id="settings" hidden
+            ><i data-lucide="settings-2"></i>Einstellungen<i
+              data-lucide="arrow-up-right"
+            ></i
+          ></a>
+        </nav>
+        <p id="message" role="status"></p>
+        <a id="login" href="/" hidden>Anmelden</a>
+        <div class="sidebar-bottom">
+          <span id="clock"></span><span>JARVIS / WORKSPACE</span>
+        </div>
+      </aside>
+      <section class="workspace" aria-label="Wissensnetz">
+        <div class="scene-header">
+          <div>
+            <div class="eyebrow">KNOWLEDGE</div>
+            <h2>Wissensnetz</h2>
+          </div>
+          <button
+            class="icon"
+            id="refresh"
+            title="Aktualisieren"
+            aria-label="Aktualisieren"
+          >
+            <i data-lucide="refresh-cw"></i>
+          </button>
+        </div>
+        <div id="scene">
+          <p id="scene-error" hidden>
+            3D nicht verfuegbar. Die Dateiliste bleibt erreichbar.
+          </p>
+        </div>
+        <div class="scene-controls">
+          <div class="segmented" role="group" aria-label="Ansicht">
+            <button id="network-mode" aria-pressed="true">Wissensnetz</button
+            ><button id="core-mode" aria-pressed="false">Jarvis</button>
+          </div>
+          <div class="tools">
+            <button
+              class="icon"
+              id="pause"
+              title="Animation pausieren"
+              aria-label="Animation pausieren"
+              aria-pressed="false"
+            >
+              <i data-lucide="pause"></i></button
+            ><button
+              class="icon"
+              id="reset"
+              title="Ansicht zuruecksetzen"
+              aria-label="Ansicht zuruecksetzen"
+            >
+              <i data-lucide="scan"></i>
+            </button>
+          </div>
+        </div>
+        <div class="selection" aria-live="polite">
+          <span id="selected-type">WORKSPACE</span
+          ><strong id="selected-name">JARVIS</strong
+          ><span id="selected-info">Keine Wissensdaten geladen</span
+          ><a href="/wissen"
+            >Wissen oeffnen <i data-lucide="arrow-up-right"></i
+          ></a>
+        </div>
+        <section class="files" aria-label="Wissensdateien">
+          <div class="files-header">
+            <h2>Dateien</h2>
+            <label class="search"
+              ><i data-lucide="search"></i
+              ><input
+                id="search"
+                type="search"
+                placeholder="Dateien suchen"
+                aria-label="Dateien suchen"
+            /></label>
+          </div>
+          <ul id="files"></ul>
+          <p id="files-empty">Keine Wissensdaten geladen.</p>
+        </section>
+      </section>
+    </main>
+    <dialog id="chat-dialog">
+      <div class="chat-heading">
+        <strong>JARVIS / ASSISTENT</strong
+        ><a
+          class="icon"
+          href="/chat"
+          title="Chat separat oeffnen"
+          aria-label="Chat separat oeffnen"
+          ><i data-lucide="external-link"></i></a
+        ><button
+          class="icon"
+          id="close-chat"
+          title="Schliessen"
+          aria-label="Schliessen"
+        >
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <iframe
+        id="chat-frame"
+        title="Jarvis Chat und Spracheingabe"
+        allow="microphone; clipboard-write"
+      ></iframe>
+    </dialog>
+  </body>
+</html>

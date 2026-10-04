@@ -1,3 +1,4 @@
+// Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed product-license UI.
 /* Spezialisierte Rollen-Agenten – Verwaltung (Einstellungen → Orchestrator)
    Der Reiter erscheint nur, wenn der Skill "Agent Orchestrator" aktiv ist.
    Backend: backend/agent_roles.py, Endpunkte /api/agent_roles (alle Admin).
@@ -283,19 +284,6 @@
             });
             se.value = r ? (r.reasoning_effort || '') : '';
 
-            // Hinweis zur Lizenz: mit nur einem erlaubten Profil bringt ein
-            // rollen-eigenes Modell nichts – lieber vorher sagen als nach dem 403.
-            var note = $('role-profile-note');
-            if (note) {
-                var lim = d.profile_limit;
-                if (lim && (d.profiles || []).length <= lim) {
-                    note.textContent = T('roles.profile_limit',
-                        'Diese Lizenz erlaubt nur ein LLM-Profil – ein eigenes Modell je Rolle setzt eine ENTERPRISE-Lizenz voraus.');
-                    note.style.display = '';
-                } else {
-                    note.style.display = 'none';
-                }
-            }
 
             // Werkzeuge
             var tb = $('role-f-tools');

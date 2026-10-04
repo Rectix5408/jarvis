@@ -1,0 +1,11 @@
+# Optional Linux NVIDIA acceleration. Requires NVIDIA Container Toolkit.
+# Add this file after docker-compose.local-llm.yml.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

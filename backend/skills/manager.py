@@ -1,3 +1,4 @@
+# Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed license-only bookkeeping.
 """Skill Manager – verwaltet alle Skills (Built-in + externe)."""
 
 import glob
@@ -112,15 +113,7 @@ class SkillManager:
         die Installation im Hintergrund-Thread; Fortschritt via
         get_install_status(). Rueckgabe: {success, installing}.
         """
-        # Zeitstempel der Aktivierung: nur die Lizenz-Nachfuehrung braucht ihn
-        # (sie schaltet bei einer Stufen-Herabsetzung die ZULETZT aktivierten
-        # Skills ab). Ein bereits laufender Skill behaelt seinen alten Wert –
-        # sonst machte ein erneutes Einschalten aus einem alten Skill den
-        # juengsten und damit den ersten Kandidaten zum Abschalten.
         zustand = {"enabled": True, "installed": True}
-        vorher = (config.get_skill_states() or {}).get(name) or {}
-        if not (vorher.get("enabled") and vorher.get("enabled_at")):
-            zustand["enabled_at"] = time.time()
         config.save_skill_state(name, zustand)
         info = self._skill_info(name) or {}
 

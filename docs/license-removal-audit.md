@@ -73,6 +73,7 @@ Line numbers refer to the baseline, before removal.
 | `backend/knowledge_sync.py:35,912-922,1053-1055,1451-1453` | Blocks manual/automatic location sync | Remove license dependency, retain token, TLS fingerprint, checksum and mirror protections |
 | `frontend/js/app.js:1222-1227,1333-1479` | License panel fetching and key actions | Remove functions and initialization |
 | `frontend/settings.html:1672-1696,2132-2133,3335` | License panel and sync/role warnings | Remove obsolete markup |
+| `frontend/settings.html:1320-1343` | Embedded sync help advertises ENTERPRISE and licensed file counters | Remove obsolete license-only paragraphs |
 | `frontend/portal.html:357-360,583-597` | Clickable license warning | Remove markup and handler |
 | `frontend/js/agent_roles.js:286-299` | Profile ceiling warning | Remove warning |
 | `frontend/js/knowledge_sync.js:77,130-144,210` | License-driven disabled add/run controls | Remove license state; retain running-state guard |
@@ -136,3 +137,81 @@ systemd-oriented update task is not redesigned into a Docker deployment tool.
 
 Hosted APIs still need genuine provider API keys. `SECRET_KEY` is the local
 HMAC authentication secret, not an OpenRouter key.
+
+## Verification
+
+The isolated test environment used Python 3.12.15 and Node 22.23.2. Python
+test dependencies and jsdom 26 were installed under `/tmp`, not in this repo.
+The new `tests/test_license.py` runs the original handler ASTs, their original
+route decorators and auth dependencies in a real FastAPI TestClient. External
+services and state providers are substituted so tests never migrate live config,
+install skills, update the real repo or contact a paid API.
+
+HTTP regressions verify 13 profiles, 21 enabled skills, 20 authenticated users,
+and both upload routes with 120 pre-existing files plus 60 new files per route.
+They verify manual/daily/weekly updates, schedule validation, update task owner
+privileges, and negative cases for missing/non-admin authentication, editor
+rights, wrong passwords, 2FA, rate limiting, revoked sessions, removed access,
+password-change requirements, blocked users and mirror write protection.
+
+Passing checks:
+
+| Suite | Passed |
+| --- | --- |
+| `tests/test_license.py` | 10 HTTP regression tests |
+| `tests/test_knowledge_sync.py` | 178 checks, including real manual/automatic sync with a fake transport |
+| `tests/test_knowledge_sync_ui.js` | 231 checks |
+| `tests/test_agent_roles_ui.js` | 126 checks |
+| `tests/test_endpoint_rights.py` | 120 checks |
+| `tests/test_mcp_gates.py` | 115 checks |
+| `tests/test_addin_sso.py` | 192 checks |
+| `tests/test_skill_config_rights.py` | 11 checks |
+| `tests/test_skill_audit.py` | 50 checks |
+| `tests/test_user_sessions.py` | 118 checks |
+| `tests/test_update_permissions.py` | 28 checks |
+| `tests/test_model_caps.py` | 103 checks |
+| `tests/test_llm_tool_schema.py` | 37 checks |
+
+Python compilation, JS syntax and `git diff --check` also pass. AST comparison
+with the baseline confirms that every retained main.py function signature and
+route decorator is unchanged. HMAC generation/verification, auth dependencies,
+Linux authentication, login authorization, profile ACLs, group checks, mirror
+guards and archive extraction are unchanged at the AST level.
+
+Broader pre-existing failures reproduced on both this checkout and the untouched
+baseline archive in the same environment:
+
+* `test_shell_redirects.py`: 145 pass / 7 fail; macOS `/tmp` symlink resolution
+  differs from the Linux paths assumed by the suite.
+* `test_doc_delivery.py`: 29 pass / 18 fail; Linux temporary-path assumptions
+  do not match resolved macOS paths. Both baseline and modified suite fail alike.
+* `test_wissen_regression.py`: 53 pass / 3 fail; outdated mock signatures accept
+  two arguments while current vector search supplies three. FAISS-dependent
+  checks were skipped because FAISS is not installed.
+* `test_agent_roles.py`: 163 pass / 11 fail with the installed Google SDK;
+  existing role dispatch/fixture expectations fail identically on baseline,
+  including an assertion requiring an existing settings.json when none exists.
+
+These are not hidden or relabeled as passing. Their unrelated code is unchanged.
+There is no Docker binary on this Mac, and no remote server session is available:
+image build, full backend startup, real RAG embeddings, MCP server connectivity,
+browser automation and WhatsApp pairing require a Linux deployment smoke test.
+External providers still need their genuine credentials and availability.
+
+Reproduce the focused tests in an environment with project dependencies:
+
+```sh
+python3 tests/test_license.py
+python3 tests/test_knowledge_sync.py
+python3 tests/test_endpoint_rights.py
+python3 tests/test_mcp_gates.py
+python3 tests/test_addin_sso.py
+JSDOM_PATH=/path/to/node_modules/jsdom node tests/test_knowledge_sync_ui.js
+JSDOM_PATH=/path/to/node_modules/jsdom node tests/test_agent_roles_ui.js
+```
+
+The full patch is generated against the recorded baseline, including the backend
+changes already committed as `3f563f5` during this session. It can be checked in
+a clean baseline checkout with `git apply --check /path/to/jarvis-license-free.patch`
+and applied with `git apply /path/to/jarvis-license-free.patch`. Do not apply the
+full baseline patch twice to a checkout that already contains the removal.

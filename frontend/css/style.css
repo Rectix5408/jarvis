@@ -1,3 +1,4 @@
+/* Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed product-license styling. */
 /* ═══════════════════════════════════════════════════════════════════
    Jarvis – Dark Glassmorphism Theme
    ═══════════════════════════════════════════════════════════════════ */
@@ -7866,15 +7867,6 @@ select.input-field {
     margin-top: 0.35rem;
 }
 
-.kbsync-lic {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    background: rgba(var(--accent-rgb), 0.1);
-    border: 1px solid rgba(var(--accent-rgb), 0.28);
-    border-radius: 8px;
-    padding: 0.45rem 0.6rem;
-    margin-bottom: 0.7rem;
-}
 
 .kbsync-form {
     border: 1px solid var(--border);

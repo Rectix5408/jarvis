@@ -1,4 +1,5 @@
 /**
+ * Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed product-license UI.
  * Pull-Synchronisation von Wissensordnern zwischen Jarvis-Standorten.
  *
  * Zwei Rollen auf einer Flaeche (Einstellungen -> Wissen):
@@ -74,7 +75,7 @@
     }
 
     const KnowledgeSync = {
-        _peers: [], _lizenz: true, _lizenzGrund: '', _sichtbar: false,
+        _peers: [], _sichtbar: false,
         _gebunden: false, _probe: null, _bearbeitet: null, _timer: null,
         _gruppen: [], _shares: [],
 
@@ -127,21 +128,12 @@
                 return;
             }
             this._peers = r.data.peers || [];
-            this._lizenz = r.data.license_ok !== false;
-            this._lizenzGrund = r.data.license_reason || '';
             const site = $('kbsync-site-name');
             // Eine laufende Eingabe nicht ueberschreiben (der Takt laeuft alle 2 s).
             if (site && document.activeElement !== site && !still) {
                 site.value = r.data.site_name || '';
                 site.placeholder = r.data.hostname || 'Standort';
             }
-            const lic = $('kbsync-license');
-            if (lic) {
-                lic.style.display = this._lizenz ? 'none' : '';
-                lic.textContent = this._lizenzGrund;
-            }
-            const add = $('kbsync-add-btn');
-            if (add) add.disabled = !this._lizenz;
             this._render();
             this._takt();
         },
@@ -207,7 +199,7 @@
                     <span class="kbsync-spacer"></span>
                     <button class="kb-hdr-btn" data-kbsync="run" data-id="${esc(p.id)}"
                         title="${esc(T('kbsync.run_title', 'Jetzt synchronisieren'))}"
-                        ${p.running || !this._lizenz ? 'disabled' : ''}>⟳</button>
+                        ${p.running ? 'disabled' : ''}>⟳</button>
                     <button class="kb-hdr-btn" data-kbsync="toggle" data-id="${esc(p.id)}"
                         title="${esc(p.state === 'paused' ? T('kbsync.resume_title', 'Fortsetzen')
                                                           : T('kbsync.pause_title', 'Pausieren'))}"

@@ -1,6 +1,7 @@
 """Jarvis FastAPI Server – Haupt-Einstiegspunkt.
 
 Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed product-license gates.
+Modified on 2026-10-04: added dashboard shell; API authorization unchanged.
 """
 
 import asyncio
@@ -2140,6 +2141,15 @@ async def chat_page():
     chat_file = FRONTEND_DIR / "chat.html"
     return HTMLResponse(
         content=chat_file.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page():
+    """Dashboard shell; all displayed data uses authenticated existing APIs."""
+    return HTMLResponse(
+        content=(FRONTEND_DIR / "dashboard.html").read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 

@@ -1,3 +1,4 @@
+// Modified in Reinhold-Jesse/jarvis on 2026-10-04: unrestricted role profiles regression.
 /* UI-Test: Rollen-Verwaltung (jsdom, echte settings.html + agent_roles.js).
  *
  * Prueft, was man am Quelltext NICHT ablesen kann:
@@ -9,7 +10,7 @@
  *   2. Anlegen schickt POST mit id, Bearbeiten PUT OHNE id (Kennung fest).
  *   3. Fremdtext (Name/Beschreibung) landet als TEXT im DOM, nicht als Markup.
  *   4. Der Klartext-Grund eines 400 wird angezeigt, nicht verschluckt.
- *   5. Der Lizenz-Hinweis erscheint nur, wenn das Profil-Limit greift.
+ *   5. Auch alte Profil-Limit-Metadaten beschraenken das Formular nicht.
  *
  * WICHTIG: am Ende window.close() + process.exit() – sonst halten Timer den
  * Node-Prozess offen (Fallstrick vom 2026-07-30).
@@ -95,7 +96,7 @@ const ANTWORT_FRISCH = {
     ['roles-list', 'btn-role-new', 'role-edit', 'role-f-id', 'role-f-name', 'role-f-desc',
         'role-f-prompt', 'role-f-tools', 'role-f-profile', 'role-f-effort', 'role-f-steps',
         'role-f-enabled', 'btn-role-save', 'btn-role-cancel', 'role-save-status',
-        'role-profile-note', 'roles-count'].forEach((id) => {
+        'roles-count'].forEach((id) => {
             check('Element ' + id, !!document.getElementById(id));
         });
     check('Formular startet unsichtbar',
@@ -435,17 +436,16 @@ const ANTWORT_FRISCH = {
 
     // ── Lizenz-Hinweis ──────────────────────────────────────────────────
     section('Lizenz-Hinweis zum Profil');
-    check('ohne Limit kein Hinweis',
-        document.getElementById('role-profile-note').style.display === 'none');
+    check('kein Produktlizenz-Hinweis', !document.getElementById('role-profile-note'));
     ANTWORT.profile_limit = 1;
     ANTWORT.profiles = [{ id: 'p1', name: 'Standard' }];
     window.AgentRoles.onShow();
     await sleep(30);
     document.getElementById('btn-role-new').click();
     await sleep(10);
-    const note = document.getElementById('role-profile-note');
-    check('bei Profil-Limit erscheint der Hinweis',
-        note.style.display !== 'none' && note.textContent.length > 10, note.textContent);
+    check('alte Profil-Limit-Metadaten erzeugen keine Sperre',
+        !document.getElementById('role-profile-note')
+        && !document.getElementById('role-f-profile').disabled);
 
     // ── 403 ─────────────────────────────────────────────────────────────
     section('Kein Admin');

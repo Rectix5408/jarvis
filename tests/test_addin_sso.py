@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified in Reinhold-Jesse/jarvis on 2026-10-04: removed product-license assertion.
 """Waechter fuer die kennwortlose Anmeldung des Outlook-Add-ins.
 
 Die Token werden hier ECHT signiert (eigenes RSA-Schluesselpaar + selbst
@@ -290,7 +291,6 @@ _ep = _ep[1].split("@app.", 1)[0]
 for muss, warum in (
         ("_check_rate_limit", "Ratenbegrenzung"),
         ("_login_still_allowed", "Login-Freigabe (AD-Liste/Gruppe)"),
-        ("darf_benutzer_anmelden", "Lizenz-Benutzergrenze"),
         ("security_guard.get_block", "Kontosperre"),
         ("record_login", "Anwesenheits-Buchhaltung"),
         ("totp_enabled", "Zwei-Faktor-Konten bekommen KEIN SSO")):

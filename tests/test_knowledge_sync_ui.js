@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Modified in Reinhold-Jesse/jarvis on 2026-10-04: unrestricted sync UI regression.
 /**
  * Oberflaeche der Pull-Synchronisation (Einstellungen -> Wissen).
  *
@@ -156,8 +157,7 @@ abschnitt('Teil 1: Container im Wissen-Reiter');
     pruefe(karten[0].textContent.includes('nächster') || karten[0].textContent.includes('next'),
         'naechster Lauf steht an der Karte');
     pruefe(karten[2].textContent.includes('nur manuell'), 'ohne Automatik: „nur manuell"');
-    pruefe(d.getElementById('kbsync-license').style.display === 'none',
-        'kein Lizenz-Hinweis bei gueltiger Lizenz');
+    pruefe(!d.getElementById('kbsync-license'), 'kein Produktlizenz-Panel');
     pruefe(d.getElementById('kbsync-add-btn').disabled === false, 'Hinzufuegen ist moeglich');
     dom.window.close();
 }
@@ -165,14 +165,11 @@ abschnitt('Teil 1: Container im Wissen-Reiter');
     const { dom, w, KS } = bauen({ license: false });
     await KS.onShow(); await warten();
     const d = w.document;
-    pruefe(d.getElementById('kbsync-license').style.display !== 'none',
-        'ohne ENTERPRISE: Hinweis sichtbar');
-    pruefe(d.getElementById('kbsync-license').textContent.includes('ENTERPRISE'),
-        'Hinweis nennt die Lizenzstufe');
-    pruefe(d.getElementById('kbsync-add-btn').disabled === true,
-        'ohne ENTERPRISE: Hinzufuegen gesperrt');
-    pruefe([...d.querySelectorAll('[data-kbsync="run"]')].every(b => b.disabled),
-        'ohne ENTERPRISE: „Jetzt holen" gesperrt');
+    pruefe(!d.getElementById('kbsync-license'), 'keine veraltete Lizenz-Warnung');
+    pruefe(d.getElementById('kbsync-add-btn').disabled === false,
+        'auch mit alten FREE-Metadaten: Hinzufuegen erlaubt');
+    pruefe([...d.querySelectorAll('[data-kbsync="run"]')].some(b => !b.disabled),
+        'auch mit alten FREE-Metadaten: manuelles Synchronisieren erlaubt');
     dom.window.close();
 }
 {
@@ -589,10 +586,11 @@ abschnitt('Teil 4b: Funktionsbeschreibung und Druckansicht');
     pruefe(modal.classList.contains('open'), 'öffnet über die Klasse „open"');
     const txt = modal.textContent;
     for (const begriff of ['Einbahnstraße', 'Token', 'Zertifikat', 'Spiegel',
-                           'ENTERPRISE', 'Prüfsumme', 'Manifest'.replace('Manifest', 'Dateiliste'),
+                           'Prüfsumme', 'Manifest'.replace('Manifest', 'Dateiliste'),
                            'Wissensgruppen sind in Jarvis']) {
         pruefe(txt.includes(begriff), `Doku behandelt: ${begriff}`);
     }
+    pruefe(!txt.includes('ENTERPRISE'), 'Doku nennt keine entfernte Produktlizenz-Stufe');
     pruefe(/1\. Übersicht/.test(txt) && /9\. Für Administratoren/.test(txt),
         'alle neun Abschnitte sind vorhanden');
     const svg = modal.querySelector('svg.kbsync-svg');
