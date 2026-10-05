@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.tools.base import BaseTool
+from backend.ai.context import fit_text
 
 # Memory-Verzeichnis
 _DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -266,15 +267,7 @@ def load_memory_context(username: str = "") -> str:
 
     context = "\n".join(lines)
 
-    # Token-Check
-    tokens = _estimate_tokens(context)
-    if tokens > TOKEN_LIMIT:
-        context += (
-            f"\n\n⚠️ WARNUNG: Memory ist sehr gross (~{tokens} Tokens). "
-            f"Nutze memory_manage(action='compress') um alte wissen_-Eintraege zusammenzufassen!"
-        )
-
-    return context
+    return fit_text(context, TOKEN_LIMIT, "memory")
 
 
 def load_selective_memory(task_text: str = "", username: str = "") -> str:
@@ -352,8 +345,4 @@ def load_selective_memory(task_text: str = "", username: str = "") -> str:
         lines.extend(wissen)
 
     context = "\n".join(lines)
-    tokens = _estimate_tokens(context)
-    if tokens > TOKEN_LIMIT:
-        context += f"\n\n⚠️ Memory gross (~{tokens} Tokens) – memory_manage(action='compress') empfohlen."
-
-    return context
+    return fit_text(context, TOKEN_LIMIT, "memory")

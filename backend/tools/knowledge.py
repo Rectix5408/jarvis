@@ -37,6 +37,43 @@ DEFAULT_MAX_SIZE_MB = 150
 # ~1600 Zeichen) – sonst wird der gefundene Treffer mitten im Text abgeschnitten
 # und das LLM antwortet auf einem Ausschnitt, der die Antwort gar nicht enthaelt.
 CHUNK_OUTPUT_LIMIT = 3000
+RAG_TOKEN_BUDGET = 1400
+
+
+def _dynamic_rag_limit(query: str, requested: int) -> int:
+    """Use fewer chunks for focused queries while respecting a small hard cap."""
+    words = re.findall(r"\w+", query or "")
+    useful = 3 if len(words) <= 8 else 4 if len(words) <= 20 else 5
+    return max(1, min(int(requested or useful), useful, 5))
+
+
+def _select_rag_results(results, token_budget: int = RAG_TOKEN_BUDGET):
+    """Drop weak/near-duplicate chunks and enforce a total estimated-token budget."""
+    if not results:
+        return []
+    top = max(float(item[0]) for item in results)
+    floor = top * 0.18 if top > 0 else 0
+    selected, fingerprints = [], []
+    total_chars = max(1, int(token_budget)) * 4
+    remaining = total_chars
+    # One verbose hit must not starve every independent source. Three focused
+    # chunks are enough for normal RAG while still sharing the hard total cap.
+    per_chunk_chars = min(CHUNK_OUTPUT_LIMIT, max(120, total_chars // 3))
+    for score, filename, chunk in results:
+        if float(score) < floor:
+            continue
+        words = set(re.findall(r"\w+", (chunk or "").casefold()))
+        if any(words and len(words & old) / max(1, len(words | old)) >= 0.82
+               for old in fingerprints):
+            continue
+        text = (chunk or "").strip()
+        if not text or remaining <= 0:
+            continue
+        text = text[:min(per_chunk_chars, remaining)]
+        selected.append((score, filename, text))
+        fingerprints.append(words)
+        remaining -= len(text)
+    return selected
 
 EXTENSIONS_TEXT = {
     ".txt", ".md", ".json", ".csv", ".log", ".py", ".sh",
@@ -2010,7 +2047,7 @@ async def rag_search(query: str, max_results: int = 8, groups=None) -> list[tupl
             results = results[:max_results]
     else:
         results = results[:max_results]
-    return results
+    return _select_rag_results(results, RAG_TOKEN_BUDGET)
 
 
 def _get_static_stats() -> dict:
@@ -2506,7 +2543,7 @@ class KnowledgeTool(BaseTool):
 
     async def execute(self, **kwargs) -> str:
         query = kwargs.get("query", "")
-        max_results = int(kwargs.get("max_results", 8))
+        max_results = _dynamic_rag_limit(query, int(kwargs.get("max_results", 8)))
 
         # Vom Benutzer gewaehlter Wissensgruppen-Filter (Modell B):
         #   None       -> kein Filter (alle Gruppen)
@@ -2650,6 +2687,8 @@ class KnowledgeTool(BaseTool):
         if results:
             results = results[:max_results]
 
+        results = _select_rag_results(results)
+
         if not results:
             # Bestandszahlen aus der Quelle nehmen, die tatsaechlich gesucht hat.
             if vector_index_ready and vs is not None:
@@ -2688,7 +2727,7 @@ class KnowledgeTool(BaseTool):
 
         for i, (score, filename, chunk) in enumerate(results, 1):
             output += f"--- [{i}] {filename} (Relevanz: {score:.2f}) ---\n"
-            output += chunk.strip()[:CHUNK_OUTPUT_LIMIT] + "\n\n"
+            output += chunk.strip() + "\n\n"
 
         return output
 

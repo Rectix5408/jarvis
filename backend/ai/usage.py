@@ -45,8 +45,15 @@ class UsageTracker:
     def record(self, route: str, usage: dict | None = None, **metadata) -> None:
         usage = usage or {}
         safe_metadata = {
-            key: value for key, value in metadata.items()
-            if key in {"reason", "tier"} and isinstance(value, (str, int, float, bool))
+            key: value for key, value in {**usage, **metadata}.items()
+            if key in {
+                "reason", "tier", "complexity", "system_tokens_est",
+                "conversation_tokens_est", "memory_tokens_est", "knowledge_tokens_est",
+                "tool_schema_tokens_est", "tool_result_tokens_est", "tool_schema_count",
+                "cached_input_tokens", "total_tokens", "llm_calls", "tool_calls", "agent_steps",
+                "subagent_calls", "fallback_count", "escalation_reason",
+                "token_source", "context_budget_tokens", "context_tokens_est",
+            } and isinstance(value, (str, int, float, bool))
         }
         with self._connect() as db:
             db.execute(

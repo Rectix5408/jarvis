@@ -674,7 +674,7 @@ if machbar:
                     if m.get("type") == "status" and m.get("highlight")
                     and not m.get("intermediate")]
 
-    _halter = {"s": None}
+    _halter = {"s": Stub([])}
     A.get_provider = lambda *a, **kw: _halter["s"]
 
     haupt = A.JarvisAgent()

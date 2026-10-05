@@ -748,9 +748,10 @@ class ReflectionTool(BaseTool):
 
             # ── Veraltete Platzhalter erkennen ─────────────────────────────
             if '{{' in val and '}}' in val:
+                placeholders = re.findall(r'\{\{.*?\}\}', val)
                 issues.append(
                     f"  • {key}: Enthält unaufgelösten Platzhalter: "
-                    f"{re.findall(r'\\{{\\{{.*?\\}}\\}}', val)}"
+                    f"{placeholders}"
                 )
 
         if not issues and not suspicious:

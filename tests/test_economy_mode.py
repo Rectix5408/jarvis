@@ -126,9 +126,11 @@ class EconomyTests(unittest.IsolatedAsyncioTestCase):
         result = await compress(agent, history, "system")
         self.assertEqual(result[1:], history[-8:])
         self.assertIsNone(result[1].parts[0].function_response)
-        self.assertEqual(agent.provider.generate_response.call_args.kwargs["tools"], [])
+        agent.provider.generate_response.assert_not_awaited()
         agent.provider.generate_response.side_effect = RuntimeError("offline")
-        self.assertIs(await compress(agent, history, "system"), history)
+        offline_result = await compress(agent, history, "system")
+        self.assertEqual(offline_result[1:], history[-8:])
+        agent.provider.generate_response.assert_not_awaited()
         agent._eff_profile = {}
         short = history[:20]
         self.assertIs(await compress(agent, short, "system"), short)

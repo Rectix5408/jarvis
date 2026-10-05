@@ -752,7 +752,9 @@ class GeminiProvider(LLMProvider):
                 usage = {
                     "input_tokens": getattr(um, "prompt_token_count", 0) or 0,
                     "output_tokens": getattr(um, "candidates_token_count", 0) or 0,
+                    "cached_input_tokens": getattr(um, "cached_content_token_count", 0) or 0,
                 }
+                usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
             except Exception:
                 pass
             return LLMResponse(parts=parts, raw=resp, usage=usage)
@@ -1103,7 +1105,11 @@ class OpenAICompatibleProvider(LLMProvider):
                 usage = {
                     "input_tokens": u.get("prompt_tokens", 0) or 0,
                     "output_tokens": u.get("completion_tokens", 0) or 0,
+                    "cached_input_tokens": (u.get("prompt_tokens_details") or {}).get(
+                        "cached_tokens", 0) or 0,
                 }
+                usage["total_tokens"] = (u.get("total_tokens") or
+                                         usage["input_tokens"] + usage["output_tokens"])
         except Exception:
             pass
         return LLMResponse(parts=parts, raw=data, usage=usage)
@@ -1252,7 +1258,11 @@ class OpenAICompatibleProvider(LLMProvider):
                 usage = {
                     "input_tokens": u.get("prompt_tokens", 0) or 0,
                     "output_tokens": u.get("completion_tokens", 0) or 0,
+                    "cached_input_tokens": (u.get("prompt_tokens_details") or {}).get(
+                        "cached_tokens", 0) or 0,
                 }
+                usage["total_tokens"] = (u.get("total_tokens") or
+                                         usage["input_tokens"] + usage["output_tokens"])
         except Exception:
             pass
         return LLMResponse(parts=parts, raw=data, usage=usage)
@@ -1470,7 +1480,9 @@ class AnthropicProvider(LLMProvider):
             usage = {
                 "input_tokens": getattr(u, "input_tokens", 0) or 0,
                 "output_tokens": getattr(u, "output_tokens", 0) or 0,
+                "cached_input_tokens": getattr(u, "cache_read_input_tokens", 0) or 0,
             }
+            usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
         except Exception:
             pass
         return LLMResponse(parts=parts, raw=response, usage=usage)
@@ -1800,6 +1812,37 @@ def _routing_text_size(contents: list) -> tuple[int, bool]:
     return size, has_media
 
 
+def _request_token_components(system_prompt: str, contents: list, tools: list | None) -> dict:
+    """Estimate context categories without retaining any request content."""
+    system_chars = len(system_prompt or "")
+    conversation_chars = 0
+    tool_result_chars = 0
+    for content in contents or []:
+        for part in getattr(content, "parts", []) or []:
+            conversation_chars += len(getattr(part, "text", "") or "")
+            response = getattr(part, "function_response", None)
+            if response is not None:
+                tool_result_chars += len(str(getattr(response, "response", "") or ""))
+    try:
+        schema_chars = len(json.dumps(tools or [], default=str, ensure_ascii=False))
+    except Exception:
+        schema_chars = sum(len(str(tool)) for tool in (tools or []))
+    estimate = lambda chars: (chars + 3) // 4
+    return {
+        "system_tokens_est": estimate(system_chars),
+        "conversation_tokens_est": estimate(conversation_chars),
+        "tool_schema_tokens_est": estimate(schema_chars),
+        "tool_result_tokens_est": estimate(tool_result_chars),
+        "tool_schema_count": len(tools or []),
+    }
+
+
+def _context_budget_for(tools: list | None) -> int:
+    """Bound context by actual execution breadth, not advertised model maximum."""
+    count = len(tools or [])
+    return 8000 if count == 0 else 16000 if count <= 3 else 32000
+
+
 class ModelRouterProvider(LLMProvider):
     """Enforces the persisted local/cloud policy at the final network boundary."""
     def __init__(self, primary: LLMProvider, primary_name: str, primary_url: str = ""):
@@ -1848,8 +1891,18 @@ class ModelRouterProvider(LLMProvider):
         url = runtime_url(os.environ.get("JARVIS_OLLAMA_URL", "http://127.0.0.1:11434"))
         return _create_provider("openai_compatible", "", url + "/v1/chat/completions", economy_mode=True)
 
-    def _tag(self, response, route, model):
+    def _tag(self, response, route, model, estimates=None):
+        measured = bool(response.usage)
         response.usage = dict(response.usage or {})
+        if not measured:
+            estimates = estimates or {}
+            response.usage["input_tokens"] = int(estimates.get("context_tokens_est") or 0)
+            response.usage["output_tokens"] = sum(
+                (len(part.text or "") + 3) // 4 for part in (response.parts or []))
+        response.usage.setdefault(
+            "total_tokens", int(response.usage.get("input_tokens") or 0)
+            + int(response.usage.get("output_tokens") or 0))
+        response.usage.setdefault("token_source", "measured" if measured else "estimated")
         response.usage.update({"route": route, "model": model})
         self.last_route, self.last_model = route, model
         self.total_input_tokens += int(response.usage.get("input_tokens") or 0)
@@ -1906,6 +1959,16 @@ class ModelRouterProvider(LLMProvider):
         from backend.ai.usage import usage_tracker
         mode, local_models = self._policy()
         request_started = time.monotonic()
+        token_components = _request_token_components(system_prompt, contents, tools)
+        context_budget = _context_budget_for(tools)
+        estimated_total = sum(token_components.get(key, 0) for key in (
+            "system_tokens_est", "conversation_tokens_est", "tool_schema_tokens_est"))
+        if estimated_total > context_budget:
+            raise RuntimeError(
+                f"Kontextbudget ueberschritten ({estimated_total}>{context_budget} Tokens); "
+                "Verlauf, Wissen oder Werkzeugauswahl muss weiter reduziert werden")
+        token_components.update({"context_budget_tokens": context_budget,
+                                 "context_tokens_est": estimated_total})
         text_size, has_media = _routing_text_size(contents)
         decision = decide(
             mode=mode,
@@ -1931,6 +1994,7 @@ class ModelRouterProvider(LLMProvider):
                 "task_type": decision.task_type.value,
                 "complexity": decision.complexity,
                 "router_reason": decision.reason,
+                **token_components,
             })
             response.usage["latency_ms"] = round((time.monotonic() - request_started) * 1000)
             usage_tracker.record("deterministic", response.usage, reason=decision.reason)
@@ -1943,12 +2007,13 @@ class ModelRouterProvider(LLMProvider):
                 response = await self._local().generate_response(
                     decision.model, system_prompt, contents, tools,
                     reasoning_effort=reasoning_effort, temperature=temperature)
-                response = self._tag(response, "local", decision.model)
+                response = self._tag(response, "local", decision.model, token_components)
                 response.usage.update({
                     "task_type": decision.task_type.value,
                     "complexity": decision.complexity,
                     "router_reason": decision.reason,
                     "tier": decision.tier,
+                    **token_components,
                 })
                 response.usage["latency_ms"] = round((time.monotonic() - request_started) * 1000)
                 usage_tracker.record("local", response.usage, reason=decision.reason, tier=decision.tier)
@@ -1963,7 +2028,7 @@ class ModelRouterProvider(LLMProvider):
         response = await self.primary.generate_response(
             model, system_prompt, contents, tools,
             reasoning_effort=reasoning_effort, temperature=temperature)
-        response = self._tag(response, self.primary_route, model)
+        response = self._tag(response, self.primary_route, model, token_components)
         response.usage.update({
             "task_type": decision.task_type.value,
             "complexity": decision.complexity,
@@ -1971,6 +2036,7 @@ class ModelRouterProvider(LLMProvider):
             "provider": self.primary_name,
             "fallback": decision.route == ExecutionRoute.LOCAL,
             "latency_ms": round((time.monotonic() - request_started) * 1000),
+            **token_components,
         })
         usage_tracker.record(self.primary_route, response.usage, reason=decision.reason)
         return response

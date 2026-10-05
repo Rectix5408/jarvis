@@ -394,9 +394,10 @@ for _mod, _datei in (("skills.office", "backend/main.py"),
 abschnitt("7. Bedingte Prompt-Abschnitte (Vorbild-Muster) bleiben bedingt")
 
 # jira/confluence machen es richtig: der Abschnitt entsteht nur, wenn das
-# Werkzeug im Kasten liegt. Dieses Muster darf nicht verloren gehen.
+# Werkzeug fuer diesen Auftrag serverseitig ausgewaehlt wurde. Die bloße
+# Installation reicht seit der dynamischen Tool-Auswahl nicht mehr.
 for _t in ("confluence_search", "jira_search"):
-    pruefe(f'if "{_t}" in self.tools_map' in AGENT_SRC,
+    pruefe(f'if "{_t}" in _selected_tool_names' in AGENT_SRC,
            f"{_t} wird nur bei vorhandenem Werkzeug im Prompt genannt")
 
 
