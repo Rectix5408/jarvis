@@ -2,11 +2,13 @@
 (() => {
   'use strict';
   if (window.parent !== window || document.getElementById('jarvis-shell')) return;
-  const paths = ['/dashboard', '/assistant', '/chat', '/wissen', '/settings', '/portal', '/models'];
+  const paths = ['/dashboard', '/assistant', '/chat', '/wissen', '/settings', '/portal', '/models', '/agents', '/workflows'];
   if (!paths.includes(location.pathname)) return;
   const links = [
     { name: 'Kontrollzentrum', path: '/dashboard', icon: 'orbit' },
     { name: 'Assistent', path: '/assistant', icon: 'messages-square' },
+    { name: 'Agenten', path: '/agents', icon: 'bot' },
+    { name: 'Workflows', path: '/workflows', icon: 'workflow' },
     { name: 'Wissen', path: '/wissen', icon: 'network' },
     { name: 'Benutzer-Chat', path: '/userchat', icon: 'users' },
     { name: 'Portal', path: '/portal', icon: 'layout-grid' },

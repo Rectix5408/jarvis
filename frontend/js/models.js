@@ -41,11 +41,12 @@
     document.querySelectorAll('.model-actions button').forEach(button => button.disabled = true);
     $('models-message').textContent = path === 'test' || path === 'activate' ? 'Lokaler Antworttest laeuft.' : 'Anfrage wird verarbeitet.';
     try {
-      const result = await api(path, { model });
+      const body = path === 'routing' ? { mode: $('routing-mode').value, local_model: model } : { model };
+      const result = await api(path, body);
       if (path === 'details') {
         $('model-details-content').textContent = JSON.stringify(result, null, 2); $('model-details').showModal();
       }
-      $('models-message').textContent = path === 'test' ? `${result.response} · ${result.latency_ms} ms · lokal` : path === 'activate' ? 'Globales Standardprofil aktiviert.' : path === 'pull' ? 'Installation gestartet.' : path === 'delete' ? 'Modell entfernt.' : '';
+      $('models-message').textContent = path === 'test' ? `${result.response} · ${result.latency_ms} ms · lokal` : path === 'activate' ? 'Lokales Routing-Modell ausgewaehlt.' : path === 'routing' ? 'Routing-Richtlinie gespeichert.' : path === 'pull' ? 'Installation gestartet.' : path === 'delete' ? 'Modell entfernt.' : '';
     } catch (error) { $('models-message').textContent = error.name === 'AbortError' ? 'Zeitlimit erreicht; Status erneut pruefen.' : error.message; }
     finally { busy = false; lastSnapshot = ''; if (!disposed) await refresh(); }
   }
@@ -53,12 +54,14 @@
     if (refreshing || disposed || busy || document.hidden) return;
     refreshing = true;
     try {
-      const status = await api('status'), jobs = await api('downloads'), catalog = await api('catalog');
+      const status = await api('status'), jobs = await api('downloads'), catalog = await api('catalog'), routing = await api('routing');
       if (disposed) return;
       $('models-content').hidden = false; $('models-login').hidden = true;
       if ($('models-message').textContent === 'Verbindung wird geprueft.') $('models-message').textContent = '';
       $('runtime-status').textContent = status.online ? `Online · ${status.version || 'Version unbekannt'}` : status.error || 'Offline';
       $('runtime-status').dataset.online = String(status.online);
+      $('routing-mode').value = routing.mode;
+      $('routing-mode').dataset.localModel = routing.local_model || '';
       const h = status.hardware;
       const values = [['CPU (JARVIS-Host)', `${h.cpu_percent ?? '?'} % · ${h.cpu_count ?? '?'} Kerne`], ['RAM frei / gesamt', `${bytes(h.ram_available)} / ${bytes(h.ram_total)}`], ['Modell-Volume frei', h.disk ? bytes(h.disk.free) : h.disk_error], ['GPU / VRAM', 'Nicht ermittelt']];
       $('hardware').replaceChildren(...values.map(([name, value]) => { const pair = node('div'); pair.append(node('dt', name), node('dd', value)); return pair; }));
@@ -70,7 +73,7 @@
       $('installed-models').replaceChildren(...status.models.map(model => {
         const r = row(model.name, `${bytes(model.size)} · ${model.details?.parameter_size || ''} · ${model.details?.quantization_level || ''}`);
         const actions = node('div', '', 'model-actions');
-        for (const [path, label, icon] of [['activate','Als Standard verwenden','check'],['test','Modell testen','play'],['details','Details','info'],['delete','Modell entfernen','trash-2']]) {
+        for (const [path, label, icon] of [['activate','Als lokales Routing-Modell verwenden','check'],['test','Modell testen','play'],['details','Details','info'],['delete','Modell entfernen','trash-2']]) {
           const control = button(label, icon, () => action(path, model.name), !status.online || (path === 'delete' && installing));
           if (path === 'delete') control.classList.add('danger'); actions.append(control);
         }
@@ -102,6 +105,7 @@
     finally { refreshing = false; }
   }
   $('refresh-models').addEventListener('click', refresh);
+  $('save-routing').addEventListener('click', () => action('routing', $('routing-mode').dataset.localModel || ''));
   $('close-model-details').addEventListener('click', () => $('model-details').close());
   document.addEventListener('visibilitychange', refresh);
   window.addEventListener('pagehide', () => { disposed = true; clearInterval(timer); controllers.forEach(controller => controller.abort()); });

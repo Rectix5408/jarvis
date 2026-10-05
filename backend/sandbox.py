@@ -118,7 +118,7 @@ _APP_DENY_REL = (
     # verweigerte den Zugriff nur mit der Begruendung "nicht im Arbeitsbereich".
     # Seit 2026-08-05 macht das einen Unterschied – die Begruendung entscheidet,
     # ob ein abgewiesener Zugriff als Angriffsindiz zaehlt (fs_target_sensitive).
-    "data/chats", "data/local_ai",
+    "data/chats", "data/local_ai", "data/operations", "data/workflows",
     "data/instructions", "data/logs", "data/conv_log.jsonl",
     "data/audit_log.jsonl", "certs",
     # Zeitgesteuerte Auftraege/Trigger ALLER Benutzer + Sicherheits-Zustand:
@@ -191,7 +191,7 @@ _APP_DENY_REL = (
 #
 # data/knowledge bleibt ABSICHTLICH lesbar: die Shell soll Wissensdateien
 # verarbeiten koennen (READ_ROOTS erlaubt es ausdruecklich).
-PRIVATE_DIRS = ("data/documents", "data/chats", "data/logs", "data/local_ai")
+PRIVATE_DIRS = ("data/documents", "data/chats", "data/logs", "data/local_ai", "data/operations", "data/workflows")
 PRIVATE_MODE = 0o750
 
 # Einzelne Dateien direkt in data/, die kein Domain-Nutzer lesen darf. Das
@@ -402,7 +402,7 @@ SHELL_SECRET_PATHS = re.compile(
     # Klartext-Kennwoerter der SAP-Benutzer.
     r'sap_accounts\.json\b|\.sapkey\b|'
     # data/chats: fremde Chat-Verlaeufe (in der Shell zusaetzlich per 0750 gesperrt)
-    r'data/chats\b|data/local_ai\b|local-models\.sqlite3\b|'
+    r'data/chats\b|data/local_ai\b|data/operations\b|data/workflows\b|local-models\.sqlite3\b|operations\.sqlite3\b|workflows\.sqlite3\b|'
     r'/root/|(?:^|\s)/root\b|\.ssh/|\bid_rsa\b|\bid_ed25519\b|\bid_dsa\b|\.netrc\b|'
     r'/etc/shadow\b|/etc/gshadow\b|/etc/sudoers|'
     r'\.key\b|\.pem\b|\.crt\b|\.p12\b|\.pfx\b|\.jks\b|'

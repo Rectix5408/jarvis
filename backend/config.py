@@ -210,6 +210,10 @@ class Config:
     # "" = Provider-Standard. Zulaessig: off|low|medium|high|max.
     # Vorrang: pro Chat-Anfrage > Profil > diese globale Vorgabe.
     LLM_REASONING_EFFORT: str = os.getenv("LLM_REASONING_EFFORT", "")
+    MODEL_ROUTING_MODE: str = os.getenv("JARVIS_MODEL_ROUTING_MODE", "cloud").lower()
+    if MODEL_ROUTING_MODE not in {"local_only", "local_first", "smart", "cloud"}:
+        MODEL_ROUTING_MODE = "cloud"
+    LOCAL_MODEL: str = os.getenv("JARVIS_LOCAL_MODEL", "")
     # Obergrenze fuer die Antwortlaenge OpenAI-kompatibler Aufrufe (256..131072).
     # Wird von llm.py::_llm_max_tokens() gelesen. Bis 2026-07-27 existierte das
     # Feld NICHT – der getattr-Default 8192 galt immer, obwohl der Docstring
@@ -331,6 +335,9 @@ class Config:
         except (TypeError, ValueError):
             self.LLM_TIMEOUT = 180
         self.LLM_REASONING_EFFORT = _valid_effort(data.get("llm_reasoning_effort"))
+        mode = str(data.get("model_routing_mode") or self.MODEL_ROUTING_MODE).lower()
+        self.MODEL_ROUTING_MODE = mode if mode in {"local_only", "local_first", "smart", "cloud"} else "cloud"
+        self.LOCAL_MODEL = _clean_profile_str(data.get("local_model", self.LOCAL_MODEL))
         try:
             self.LLM_MAX_TOKENS = max(256, min(int(data.get("llm_max_tokens") or 8192), 131072))
         except (TypeError, ValueError):
@@ -442,6 +449,8 @@ class Config:
             "use_physical_desktop": self.USE_PHYSICAL_DESKTOP,
             "llm_timeout": self.LLM_TIMEOUT,
             "llm_reasoning_effort": self.LLM_REASONING_EFFORT,
+            "model_routing_mode": self.MODEL_ROUTING_MODE,
+            "local_model": self.LOCAL_MODEL,
             "llm_max_tokens": self.LLM_MAX_TOKENS,
             "docs_retention_days": self.DOCS_RETENTION_DAYS,
             "agent_api_key": self.AGENT_API_KEY,
@@ -468,6 +477,12 @@ class Config:
                 pass
         if "llm_reasoning_effort" in settings:
             self.LLM_REASONING_EFFORT = _valid_effort(settings["llm_reasoning_effort"])
+        if "model_routing_mode" in settings:
+            mode = str(settings["model_routing_mode"] or "").lower()
+            if mode in {"local_only", "local_first", "smart", "cloud"}:
+                self.MODEL_ROUTING_MODE = mode
+        if "local_model" in settings:
+            self.LOCAL_MODEL = _clean_profile_str(settings["local_model"])
         if "llm_max_tokens" in settings:
             try:
                 self.LLM_MAX_TOKENS = max(256, min(int(settings["llm_max_tokens"]), 131072))

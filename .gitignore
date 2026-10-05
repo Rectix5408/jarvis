@@ -23,6 +23,8 @@ services/whatsapp-bridge/.wwebjs_auth/
 # ─── Daten & Logs ───────────────────────────────────────────────────────────
 data/logs/
 data/local_ai/
+data/operations/
+data/workflows/
 # Live-Instruktionen: werden pro Server gepflegt (Oberflaeche bzw. reflection-Tool)
 # und duerfen NICHT aus dem Repo ueberschrieben werden. Der Update-Pill machte aus
 # ihnen sonst bei jedem Pull einen Merge-Konflikt (Vorfall 2026-07-13 auf ECHT).

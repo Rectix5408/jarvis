@@ -17,6 +17,8 @@ class Config:
     def __init__(self):
         self.profiles = []
         self.active_profile_id = None
+        self.MODEL_ROUTING_MODE = "cloud"
+        self.LOCAL_MODEL = ""
 
     def create_profile(self, data):
         profile = {**data, "id": str(len(self.profiles) + 1)}
@@ -26,6 +28,12 @@ class Config:
     def activate_profile(self, identifier):
         self.active_profile_id = identifier
         return True
+
+    def save_global_settings(self, values):
+        if "model_routing_mode" in values:
+            self.MODEL_ROUTING_MODE = values["model_routing_mode"]
+        if "local_model" in values:
+            self.LOCAL_MODEL = values["local_model"]
 
 
 class LocalModelsTests(unittest.IsolatedAsyncioTestCase):
@@ -152,13 +160,14 @@ class LocalModelsTests(unittest.IsolatedAsyncioTestCase):
             for path in ("details", "pull", "test", "delete", "activate"):
                 self.assertEqual((await client.post("/api/local-ai/" + path, json={"model": "qwen3:4b"})).status_code, 403)
             self.assertEqual(self.calls, [])
-            for _ in range(2):
-                response = await client.post("/api/local-ai/activate", json={"model": "qwen3:4b"}, headers={"Authorization": "Bearer admin-fixture"})
-                self.assertEqual(response.status_code, 200, response.text)
-            self.assertEqual(len(config.profiles), 1)
-            self.assertEqual(config.active_profile_id, "1")
-            self.assertEqual(config.profiles[0]["api_url"], "http://ollama:11434/v1/chat/completions")
-            self.assertTrue(config.profiles[0]["economy_mode"])
+            response = await client.post("/api/local-ai/activate", json={"model": "qwen3:4b"}, headers={"Authorization": "Bearer admin-fixture"})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(config.LOCAL_MODEL, "qwen3:4b")
+            self.assertEqual(config.profiles, [])
+            self.assertIsNone(config.active_profile_id)
+            route = await client.post("/api/local-ai/routing", json={"mode": "local_only", "local_model": "qwen3:4b"}, headers={"Authorization": "Bearer admin-fixture"})
+            self.assertEqual(route.status_code, 200, route.text)
+            self.assertEqual(config.MODEL_ROUTING_MODE, "local_only")
 
     def test_url_constraints(self):
         for url in ("https://api.openai.com", "http://169.254.169.254", "http://0.0.0.0", "http://user:password@localhost", "http://localhost/api"):

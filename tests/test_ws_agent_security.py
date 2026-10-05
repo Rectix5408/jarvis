@@ -30,11 +30,13 @@ class Agent:
 
 def fixture():
     tree = ast.parse(Path("backend/main.py").read_text())
-    names = {"handle_ws_message", "_ws_may_access_agent", "cpu_broadcast"}
+    names = {"handle_ws_message", "_ws_may_access_agent", "_ws_agent_info", "cpu_broadcast"}
     functions = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
     main, own, foreign = Agent("main"), Agent("own", "alice", True), Agent("foreign", "bob", True)
     agents = {a.agent_id: a for a in (main, own, foreign)}
-    manager = SimpleNamespace(agents=agents, main_agent=main, get_agent=agents.get, stop_all=lambda: [a.stop() for a in agents.values()])
+    manager = SimpleNamespace(agents=agents, main_agent=main, get_agent=agents.get,
+                              get_info_for=lambda user, admin=False: [a.get_info() for a in agents.values() if not a.is_sub_agent or admin or a._owner_username == user],
+                              stop_all=lambda: [a.stop() for a in agents.values()])
     users = {}
     ns = {"WebSocket": Socket, "asyncio": asyncio, "agent_instance": main, "agent_manager": manager,
           "_ws_usernames": users, "verify_token": lambda t: t if t in {"alice", "bob", "admin"} else None,
@@ -55,12 +57,16 @@ async def checks():
     assert not main.stops and ws.messages[-1]["type"] == "error"
     await send(type="control", action="stop", agent_id="foreign")
     assert not foreign.stops
+    await send(type="control", action="stop", agent_id="does-not-exist")
+    assert not main.stops and ws.messages[-1]["message"] == "Agent nicht gefunden"
     await send(type="control", action="stop", agent_id="own")
     assert len(own.stops) == 1
     await send(type="control", action="stop")
     assert main.stops == [{"username": "alice"}]
     await send(type="get_agents")
     assert [a["agent_id"] for a in ws.messages[-1]["agents"]] == ["main", "own"]
+    await send(token="admin", type="get_agents")
+    assert [a["agent_id"] for a in ws.messages[-1]["agents"]] == ["main", "own", "foreign"]
     await send(type="spawn_agent", text="Denied")
     assert ws.messages[-1]["type"] == "error"
     await send(token="admin", type="control", action="stop_all")
@@ -82,4 +88,4 @@ async def checks():
 
 if __name__ == "__main__":
     asyncio.run(checks())
-    print("WebSocket authorization: 11 behavioral checks passed")
+    print("WebSocket authorization: 13 behavioral checks passed")

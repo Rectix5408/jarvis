@@ -4768,11 +4768,14 @@ async def get_settings(user: str = Depends(require_auth)):
     return JSONResponse({
         "active_profile_id": config.active_profile_id,
         "profiles": safe_profiles,
+        "agent_api_key": _mask_key(config.AGENT_API_KEY),
         "tts_enabled": config.TTS_ENABLED,
         "tts_voice": config.TTS_VOICE,
         "use_physical_desktop": config.USE_PHYSICAL_DESKTOP,
         "llm_timeout": config.LLM_TIMEOUT,
         "llm_reasoning_effort": config.LLM_REASONING_EFFORT,
+        "model_routing_mode": config.MODEL_ROUTING_MODE,
+        "local_model": config.LOCAL_MODEL,
         "llm_max_tokens": config.LLM_MAX_TOKENS,
         "docs_retention_days": config.DOCS_RETENTION_DAYS,
         # Kontext-Komprimierungs-Schwelle: nur zum ANZEIGEN im Feld unter
@@ -4784,7 +4787,6 @@ async def get_settings(user: str = Depends(require_auth)):
         # zeigte dann einen falschen Standardwert (derselbe Fallstrick wie bei
         # GET /api/context/stats).
         "compress_threshold": max(4, min(200, int(config.get_setting("compress_threshold") or 30))),
-        "agent_api_key": _mask_key(config.AGENT_API_KEY),
         "defaults": config.DEFAULT_PROVIDERS,
         # Auswahlliste fuer die Oberflaeche ("" = Provider-Standard)
         "reasoning_effort_values": list(REASONING_EFFORT_VALUES),
@@ -5170,6 +5172,64 @@ app.add_event_handler("shutdown", _local_models.close)
 @app.get("/models", response_class=HTMLResponse)
 async def models_page():
     return HTMLResponse((FRONTEND_DIR / "models.html").read_text(encoding="utf-8"),
+                        headers={"Cache-Control": "no-store"})
+
+
+from backend.operations import AgentRuntime, OperationsStore, make_router as _operations_router
+
+
+def _operations_tools(user):
+    from backend.agent import _BLOCKED_TOOLS_FOR_LDAP
+    agent = agent_manager.get_or_create_main() if agent_manager else None
+    names = {tool.name for tool in (agent._tool_instances if agent else [])}
+    names -= {"delegate", "spawn_agent"}
+    if not _is_admin_user(user):
+        names -= set(_BLOCKED_TOOLS_FOR_LDAP)
+    return sorted(names)
+
+
+def _operations_profiles(user):
+    return [{"id": profile["id"], "name": profile.get("name", ""),
+             "provider": profile.get("provider", ""), "model": profile.get("model", "")}
+            for profile in config.profiles if _may_use_profile(user, profile)]
+
+
+def _audit_operation(user, action, resource):
+    from backend.audit_log import log_tool
+    log_tool(user, action, {"resource_id": resource}, 0, 0)
+
+
+_operations_store = OperationsStore(config.SETTINGS_FILE.parent / "operations")
+_operations_runtime = AgentRuntime(_operations_store, _is_admin_user,
+                                   _user_has_internet_access, _user_may_use_sap,
+                                   audit=_audit_operation)
+app.include_router(_operations_router(_operations_store, _operations_runtime,
+                                      require_auth, _is_admin_user,
+                                      _operations_tools, _operations_profiles,
+                                      _audit_operation))
+app.add_event_handler("startup", _operations_store.start)
+app.add_event_handler("shutdown", _operations_runtime.close)
+
+from backend.workflows import WorkflowRuntime, WorkflowStore, make_router as _workflow_router
+
+_workflow_store = WorkflowStore(config.SETTINGS_FILE.parent / "workflows")
+_workflow_runtime = WorkflowRuntime(_workflow_store, _operations_store,
+                                    _operations_runtime, _is_admin_user)
+app.include_router(_workflow_router(_workflow_store, _workflow_runtime,
+                                    _operations_store, require_auth, _is_admin_user))
+app.add_event_handler("startup", _workflow_store.start)
+app.add_event_handler("shutdown", _workflow_runtime.close)
+
+
+@app.get("/workflows", response_class=HTMLResponse)
+async def workflows_page():
+    return HTMLResponse((FRONTEND_DIR / "workflows.html").read_text(encoding="utf-8"),
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/agents", response_class=HTMLResponse)
+async def agents_page():
+    return HTMLResponse((FRONTEND_DIR / "agents.html").read_text(encoding="utf-8"),
                         headers={"Cache-Control": "no-store"})
 
 
@@ -14533,6 +14593,13 @@ def _ws_may_access_agent(ws, agent) -> bool:
                          or getattr(agent, "_owner_username", "") == user))
 
 
+def _ws_agent_info(ws) -> list[dict]:
+    if not agent_manager:
+        return []
+    user = _get_ws_username(ws)
+    return agent_manager.get_info_for(user, _is_admin_user(user))
+
+
 async def handle_ws_message(ws: WebSocket, msg: dict):
     """Verarbeitet eingehende WebSocket-Nachrichten."""
     global agent_instance, agent_manager
@@ -14996,7 +15063,7 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
             "type": "agent_event",
             "event": "started",
             "agent": agent.get_info(),
-            "agents": agent_manager.get_all_info(),
+            "agents": _ws_agent_info(ws),
         })
 
         # Aufgabe im Hintergrund starten – sendet 'finished' wenn fertig (für Windows-TTS)
@@ -15034,7 +15101,7 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
                         "type": "agent_event",
                         "event": "finished",
                         "agent": agent.get_info(),
-                        "agents": agent_manager.get_all_info(),
+                        "agents": _ws_agent_info(ws),
                     })
                 except Exception:
                     pass
@@ -15072,6 +15139,9 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
         target = None
         if agent_manager and target_id:
             target = agent_manager.get_agent(target_id)
+            if target is None:
+                await ws.send_json({"type": "error", "message": "Agent nicht gefunden"})
+                return
         if target is None:
             target = agent_instance
 
@@ -15104,9 +15174,7 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
 
     elif msg_type == "get_agents":
         # Agent-Liste anfordern
-        agents = ([agent.get_info() for agent in agent_manager.agents.values()
-                   if not agent.is_sub_agent or _ws_may_access_agent(ws, agent)]
-                  if agent_manager else [])
+        agents = _ws_agent_info(ws)
         await ws.send_json({"type": "agent_list", "agents": agents})
 
     elif msg_type == "register":

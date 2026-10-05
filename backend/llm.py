@@ -1738,7 +1738,7 @@ def provider_fuer_lauf(prompt_tool_calling: bool | None = None):
             p.get("model") or config.current_model)
 
 
-def get_provider(
+def _create_provider(
     provider_name: str,
     api_key: str,
     api_url: str = None,
@@ -1766,3 +1766,146 @@ def get_provider(
             prompt_tool_calling=prompt_tool_calling,
         ))
     raise ValueError(f"Unbekannter Provider: {provider_name}")
+
+
+def _routing_text_size(contents: list) -> tuple[int, bool]:
+    size, has_media = 0, False
+    for content in contents or []:
+        for part in getattr(content, "parts", []) or []:
+            size += len(getattr(part, "text", "") or "")
+            if getattr(part, "inline_data", None):
+                has_media = True
+    return size, has_media
+
+
+class ModelRouterProvider(LLMProvider):
+    """Enforces the persisted local/cloud policy at the final network boundary."""
+    def __init__(self, primary: LLMProvider, primary_name: str, primary_url: str = ""):
+        self.primary = primary
+        self.primary_name = primary_name
+        self.last_route = ""
+        self.last_model = ""
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_cost = 0.0
+        self.token_budget = 0
+        self.cost_budget = 0.0
+        self.primary_route = "cloud"
+        if primary_name.lower() == "openai_compatible":
+            try:
+                import ipaddress
+                from urllib.parse import urlsplit
+                host = urlsplit(primary_url).hostname or ""
+                self.primary_route = "local" if host in {"localhost", "ollama", "host.docker.internal"} else "cloud"
+                try:
+                    address = ipaddress.ip_address(host)
+                    if address.is_loopback or address.is_private:
+                        self.primary_route = "local"
+                except ValueError:
+                    pass
+            except Exception:
+                pass
+        self.economy_mode = getattr(primary, "economy_mode", False)
+
+    @staticmethod
+    def _policy():
+        from backend.config import config
+        mode = getattr(config, "MODEL_ROUTING_MODE", "cloud")
+        return mode if mode in {"local_only", "local_first", "smart", "cloud"} else "cloud", getattr(config, "LOCAL_MODEL", "")
+
+    @staticmethod
+    def _local():
+        import os
+        from backend.local_models import runtime_url
+        url = runtime_url(os.environ.get("JARVIS_OLLAMA_URL", "http://127.0.0.1:11434"))
+        return _create_provider("openai_compatible", "", url + "/v1/chat/completions", economy_mode=True)
+
+    def _tag(self, response, route, model):
+        response.usage = dict(response.usage or {})
+        response.usage.update({"route": route, "model": model})
+        self.last_route, self.last_model = route, model
+        self.total_input_tokens += int(response.usage.get("input_tokens") or 0)
+        self.total_output_tokens += int(response.usage.get("output_tokens") or 0)
+        if route == "cloud":
+            input_rate, output_rate, _ = self._cloud_rates()
+            call_cost = ((int(response.usage.get("input_tokens") or 0) * input_rate)
+                         + (int(response.usage.get("output_tokens") or 0) * output_rate)) / 1_000_000
+            self.total_cost += call_cost
+            response.usage["cost"] = call_cost
+        return response
+
+    @staticmethod
+    def _cloud_rates():
+        import os
+        try:
+            input_rate = max(0.0, float(os.environ.get("JARVIS_CLOUD_INPUT_COST_PER_MILLION", "0")))
+            output_rate = max(0.0, float(os.environ.get("JARVIS_CLOUD_OUTPUT_COST_PER_MILLION", "0")))
+            output_reserve = max(1, int(os.environ.get("JARVIS_CLOUD_OUTPUT_TOKEN_RESERVE", "4096")))
+            return input_rate, output_rate, output_reserve
+        except ValueError as error:
+            raise RuntimeError("Ungueltige Cloud-Kostenkonfiguration") from error
+
+    def _authorize_cloud_cost(self, text_size):
+        if not self.cost_budget:
+            return
+        input_rate, output_rate, output_reserve = self._cloud_rates()
+        if input_rate <= 0 or output_rate <= 0:
+            raise RuntimeError("Kostenbudget kann ohne Cloud-Preisraten nicht sicher erzwungen werden")
+        conservative = ((max(1, text_size // 4) * input_rate)
+                        + (output_reserve * output_rate)) / 1_000_000
+        if self.total_cost + conservative > self.cost_budget:
+            raise RuntimeError(f"Kostenbudget erreicht ({self.cost_budget:.4f})")
+
+    async def generate_response(self, model: str, system_prompt: str, contents: list,
+                                tools: list = None, reasoning_effort: str | None = None,
+                                temperature=None) -> LLMResponse:
+        if self.token_budget and self.total_input_tokens + self.total_output_tokens >= self.token_budget:
+            raise RuntimeError(f"Tokenbudget erreicht ({self.token_budget})")
+        mode, local_model = self._policy()
+        text_size, has_media = _routing_text_size(contents)
+        use_local = mode in {"local_only", "local_first"} or (
+            mode == "smart" and not has_media and not tools and text_size <= 6000)
+        if use_local:
+            if not local_model:
+                if mode == "local_only":
+                    raise RuntimeError("LOCAL ONLY ist aktiv, aber kein lokales Modell ist ausgewaehlt")
+            else:
+                try:
+                    response = await self._local().generate_response(
+                        local_model, system_prompt, contents, tools,
+                        reasoning_effort=reasoning_effort, temperature=temperature)
+                    return self._tag(response, "local", local_model)
+                except Exception:
+                    if mode == "local_only":
+                        raise
+        if self.primary_route == "cloud":
+            self._authorize_cloud_cost(text_size)
+        response = await self.primary.generate_response(
+            model, system_prompt, contents, tools,
+            reasoning_effort=reasoning_effort, temperature=temperature)
+        return self._tag(response, self.primary_route, model)
+
+    async def generate_image(self, model: str, prompt: str) -> bytes:
+        mode, _ = self._policy()
+        if mode == "local_only":
+            raise ImageGenNotSupported("LOCAL ONLY")
+        return await self.primary.generate_image(model, prompt)
+
+    def reset(self):
+        reset = getattr(self.primary, "reset", None)
+        if reset:
+            reset()
+
+
+def get_provider(
+    provider_name: str,
+    api_key: str,
+    api_url: str = None,
+    auth_method: str = "api_key",
+    session_key: str = None,
+    prompt_tool_calling: bool = False,
+    economy_mode: bool = False,
+) -> LLMProvider:
+    primary = _create_provider(provider_name, api_key, api_url, auth_method,
+                               session_key, prompt_tool_calling, economy_mode)
+    return ModelRouterProvider(primary, provider_name, api_url or "")

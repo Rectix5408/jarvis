@@ -19,6 +19,7 @@
     <p id="models-message" role="status" aria-live="polite">Verbindung wird geprueft.</p>
     <a id="models-login" href="/assistant" hidden>Anmelden</a>
     <div id="models-content" hidden>
+      <section class="routing-band" aria-labelledby="routing-heading"><div><h2 id="routing-heading">Routing</h2><p class="model-meta">Gilt fuer Chat, Agenten und modellgestuetzte Werkzeuge.</p></div><div><label for="routing-mode">Betriebsmodus</label><select id="routing-mode"><option value="local_only">Nur lokal</option><option value="local_first">Lokal zuerst</option><option value="smart">Smart</option><option value="cloud">Cloudprofil</option></select><button id="save-routing" class="routing-save">Anwenden</button></div></section>
       <section class="runtime-band" aria-labelledby="runtime-heading"><div><h2 id="runtime-heading">Ollama</h2><p id="runtime-status">Status unbekannt</p></div><dl id="hardware"></dl></section>
       <section aria-labelledby="installed-heading"><h2 id="installed-heading">Installiert</h2><div id="installed-models" class="model-list"></div></section>
       <section aria-labelledby="downloads-heading"><h2 id="downloads-heading">Installationen</h2><div id="model-downloads" class="model-list"></div></section>

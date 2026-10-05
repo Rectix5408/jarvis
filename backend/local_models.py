@@ -249,6 +249,29 @@ def make_router(service, require_admin, config):
     async def downloads():
         return service.jobs()
 
+    @router.get("/routing")
+    async def routing():
+        return {"mode": config.MODEL_ROUTING_MODE, "local_model": config.LOCAL_MODEL,
+                "modes": ["local_only", "local_first", "smart", "cloud"]}
+
+    class RoutingRequest(BaseModel):
+        mode: str = Field(min_length=5, max_length=20)
+        local_model: str = Field(default="", max_length=160)
+
+    @router.post("/routing")
+    async def set_routing(body: RoutingRequest, user=Depends(require_admin)):
+        mode = body.mode.lower()
+        if mode not in {"local_only", "local_first", "smart", "cloud"}:
+            raise HTTPException(400, "Unbekannter Routing-Modus")
+        selected = model_name(body.local_model) if body.local_model else config.LOCAL_MODEL
+        if mode != "cloud":
+            if not selected:
+                raise HTTPException(409, "Zuerst ein lokales Modell auswaehlen")
+            await guarded(service.details(selected))
+        config.save_global_settings({"model_routing_mode": mode, "local_model": selected})
+        service.audit(user, "model_routing_changed", selected or mode)
+        return {"success": True, "mode": config.MODEL_ROUTING_MODE, "local_model": config.LOCAL_MODEL}
+
     @router.post("/details")
     async def details(body: ModelRequest):
         return await guarded(service.details(body.model))
@@ -265,19 +288,13 @@ def make_router(service, require_admin, config):
     async def activate(body: ModelRequest, user=Depends(require_admin)):
         async with service.lock:
             await guarded(service.test(body.model))
-            url = service.url + "/v1/chat/completions"
-            profile = next((p for p in config.profiles if p.get("provider") == "openai_compatible" and p.get("api_url") == url and p.get("model") == body.model), None)
-            if not profile:
-                profile = config.create_profile({"name": "Local: " + body.model, "provider": "openai_compatible",
-                                                 "api_url": url, "model": body.model, "economy_mode": True})
-            if not config.activate_profile(profile["id"]):
-                raise HTTPException(409, "Profil konnte nicht aktiviert werden")
+            config.save_global_settings({"local_model": body.model})
             service.audit(user, "model_activated", body.model)
-            return {"success": True, "profile_id": profile["id"], "scope": "global_default"}
+            return {"success": True, "local_model": body.model, "scope": "model_router"}
 
     @router.post("/delete")
     async def delete(body: ModelRequest, user=Depends(require_admin)):
-        await guarded(service.delete(body.model, user, lambda name: any(p.get("model") == name for p in config.profiles)))
+        await guarded(service.delete(body.model, user, lambda name: config.LOCAL_MODEL == name or any(p.get("model") == name for p in config.profiles)))
         return {"success": True}
 
     return router

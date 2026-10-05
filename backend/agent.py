@@ -979,6 +979,13 @@ KRITISCH – Autonomie-Regeln:
         self._role_tools: set[str] | None = None
         self._role_profile_id: str = ""
         self._role_max_steps: int = 0
+        self._role_permissions: dict[str, bool] | None = None
+        self._role_tool_call_limit: int = 0
+        self._role_tool_calls: int = 0
+        self._role_token_budget: int = 0
+        self._role_cost_budget: float = 0.0
+        self._operations_event = None
+        self._approval_handler = None
         # Delegationen des LAUFENDEN Auftrags (wird pro Lauf zurueckgesetzt).
         self._delegations_used: int = 0
         # Werkzeuge, die in DIESEM Lauf schon per Rollen-Rueckfall abgefangen
@@ -994,6 +1001,8 @@ KRITISCH – Autonomie-Regeln:
             prompt_tool_calling=self.current_prompt_tool_calling,
             economy_mode=bool((self._eff_profile or {}).get("economy_mode")),
         )
+        self.provider.token_budget = max(0, int(getattr(self, "_role_token_budget", 0) or 0))
+        self.provider.cost_budget = max(0.0, float(getattr(self, "_role_cost_budget", 0) or 0))
 
     # ─── Benutzerbezogenes LLM-Profil (Fassade, Fallback: global) ──────────
     @property
@@ -2613,6 +2622,8 @@ KRITISCH – Autonomie-Regeln:
             prompt_tool_calling=self.current_prompt_tool_calling,
             economy_mode=bool((self._eff_profile or {}).get("economy_mode")),
         )
+        self.provider.token_budget = max(0, int(getattr(self, "_role_token_budget", 0) or 0))
+        self.provider.cost_budget = max(0.0, float(getattr(self, "_role_cost_budget", 0) or 0))
 
         # System-Prompt zusammenbauen
         system_prompt = _mit_plotstyle(self._base_system_prompt())
@@ -2888,12 +2899,6 @@ KRITISCH – Autonomie-Regeln:
         import time as _time
         from backend.telemetry import tracer
 
-        # Cache-Check für cacheable Tools
-        if name in self._CACHEABLE_TOOLS:
-            cache_key = f"{name}:{_json.dumps(args, sort_keys=True)}"
-            if cache_key in self._tool_cache:
-                return self._tool_cache[cache_key]
-
         tool = self.tools_map.get(name)
         if not tool:
             return f"Fehler: Tool '{name}' nicht gefunden"
@@ -2910,6 +2915,44 @@ KRITISCH – Autonomie-Regeln:
             return (f"Zugriff verweigert: Das Werkzeug '{name}' gehoert nicht zum Umfang "
                     f"der Rolle '{self._role_id}'. Verfuegbar: "
                     f"{', '.join(sorted(_allow)) or '(keine)'}.")
+
+        permissions = getattr(self, "_role_permissions", None)
+        if permissions is not None:
+            lowered = name.lower()
+            if any(word in lowered for word in ("delete", "remove", "trash")):
+                required = "delete"
+            elif any(word in lowered for word in ("send", "mail", "message", "publish", "notify")):
+                required = "send"
+            elif any(word in lowered for word in ("shell", "execute", "desktop", "browser_control", "browser_cdp")):
+                required = "execute"
+            elif any(word in lowered for word in ("write", "create", "save", "upload", "edit", "update")):
+                required = "write"
+            else:
+                required = "read"
+            if not permissions.get(required, False):
+                return f"Zugriff verweigert: Berechtigung '{required}' fehlt fuer Tool '{name}'."
+
+            approval = getattr(self, "_approval_handler", None)
+            if callable(approval) and not await approval(name, dict(args), required):
+                return f"Freigabe abgelehnt: Tool '{name}' wurde nicht ausgefuehrt."
+
+        limit = max(0, int(getattr(self, "_role_tool_call_limit", 0) or 0))
+        used = max(0, int(getattr(self, "_role_tool_calls", 0) or 0))
+        if limit and used >= limit:
+            return f"Tool-Limit erreicht ({limit} Aufrufe)."
+        self._role_tool_calls = used + 1
+        event = getattr(self, "_operations_event", None)
+        if callable(event):
+            event("TOOL_STARTED", name, {"tool": name, "call": self._role_tool_calls})
+
+        # Auch Cache-Treffer muessen zuerst Whitelist, Berechtigungen und
+        # Aufruflimit passieren. Sonst waere der Cache ein Rechte-Bypass.
+        if name in self._CACHEABLE_TOOLS:
+            cache_key = f"{name}:{_json.dumps(args, sort_keys=True)}"
+            if cache_key in self._tool_cache:
+                if callable(event):
+                    event("TOOL_FINISHED", name, {"tool": name, "cached": True})
+                return self._tool_cache[cache_key]
 
         span = tracer.start_span(name, kind="tool", parent_id=self.agent_id)
         span.attributes["tool.name"] = name
@@ -3218,12 +3261,16 @@ KRITISCH – Autonomie-Regeln:
                 )
             except Exception:
                 pass
+            if callable(event):
+                event("TOOL_FINISHED", name, {"tool": name, "duration_ms": _dur_ms})
             return result
         except Exception as e:
             import traceback as _tbmod
             span.attributes["error.type"] = type(e).__name__
             span.attributes["error.traceback"] = _tbmod.format_exc()[-4000:]
             tracer.end_span(span, status="error", error=str(e).strip() or type(e).__name__)
+            if callable(event):
+                event("TOOL_FAILED", name, {"tool": name, "error": type(e).__name__})
             return f"Fehler bei {name}: {str(e)}"
 
     async def _handle_spawn(self, ws: WebSocket, label: str, task: str) -> str:
@@ -3334,7 +3381,8 @@ KRITISCH – Autonomie-Regeln:
                         "type": "agent_event",
                         "event": "spawned",
                         "agent": agent.get_info(),
-                        "agents": agent_manager.get_all_info(),
+                        "agents": agent_manager.get_info_for(
+                            self.actor_name(), self._actor_is_privileged()),
                     })
                 except Exception:  # noqa: BLE001
                     pass
@@ -3378,7 +3426,8 @@ KRITISCH – Autonomie-Regeln:
                                 "type": "agent_event",
                                 "event": "finished",
                                 "agent": agent.get_info(),
-                                "agents": _am.get_all_info(),
+                                "agents": _am.get_info_for(
+                                    self.actor_name(), self._actor_is_privileged()),
                             })
                 except Exception:  # noqa: BLE001
                     pass
@@ -3911,7 +3960,7 @@ KRITISCH – Autonomie-Regeln:
         _DENY_NAME = ("id_rsa", "id_ed25519", "id_dsa", ".env", "settings.json",
                       "credentials", "ad_cache.json", "license.json",
                       "knowledge_sync.json", "agent_roles.json", "security_state.json",
-                      "scheduled_jobs.json", "file_watchers.json", ".owners.json", "local-models.sqlite3")
+                      "scheduled_jobs.json", "file_watchers.json", ".owners.json", "local-models.sqlite3", "operations.sqlite3")
 
         def _ist_geheim(pfad) -> bool:
             low = pfad.name.lower()
@@ -4289,6 +4338,16 @@ class AgentManager:
             result.append(a.get_info())
         return result
 
+    def get_info_for(self, username: str, privileged: bool = False) -> list[dict]:
+        """Agent-Metadaten innerhalb der Owner-Grenze eines verbundenen Clients."""
+        result = []
+        if self.main_agent:
+            result.append(self.main_agent.get_info())
+        for agent in self.get_sub_agents():
+            if privileged or (username and getattr(agent, "_owner_username", "") == username):
+                result.append(agent.get_info())
+        return result
+
     async def run_sub_agent(self, agent: JarvisAgent, task: str, ws: WebSocket):
         """Startet einen Sub-Agent als async Task."""
         import sys
@@ -4298,7 +4357,7 @@ class AgentManager:
             "type": "agent_event",
             "event": "spawned",
             "agent": agent.get_info(),
-            "agents": self.get_all_info(),
+            "agents": self.get_info_for(getattr(agent, "_owner_username", "")),
         })
 
         try:
@@ -4309,7 +4368,7 @@ class AgentManager:
                 "type": "agent_event",
                 "event": "finished",
                 "agent": agent.get_info(),
-                "agents": self.get_all_info(),
+                "agents": self.get_info_for(getattr(agent, "_owner_username", "")),
             })
 
     def stop_all(self):

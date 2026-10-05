@@ -9,7 +9,11 @@ h1 { font-size: 28px; margin: 8px 0 0; }
 h2 { font-size: 18px; margin: 0 0 16px; }
 .models-workspace section { border-top: 1px solid var(--border-color, #354141); padding: 24px 0; }
 #models-message { min-height: 24px; overflow-wrap: anywhere; }
-.runtime-band { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; }
+.runtime-band, .routing-band { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; }
+.routing-band > div:last-child { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.routing-band label { color: var(--text-secondary, #aab9b9); font-size: 13px; }
+.routing-band select, .routing-save { min-height: 40px; border: 1px solid var(--border-color, #354141); border-radius: 6px; background: var(--surface-elevated, #202a2b); color: inherit; padding: 0 12px; }
+.routing-save { cursor: pointer; }
 .runtime-band dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; gap: 16px; }
 dt { font-size: 12px; color: var(--text-secondary, #aab9b9); } dd { margin: 8px 0 0; font-size: 14px; overflow-wrap: anywhere; }
 .model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border-color, #354141); }
@@ -29,5 +33,5 @@ a { color: #8dc9ee; }
 #model-details { width: min(760px, calc(100% - 32px)); max-height: 85vh; border-radius: 8px; background: #172021; color: #edf3f3; border: 1px solid #425152; padding: 24px; }
 #model-details::backdrop { background: #0009; }
 #model-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 ui-monospace, monospace; }
-@media(max-width: 900px) { .runtime-band { grid-template-columns: 1fr; } .runtime-band dl { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media(max-width: 900px) { .runtime-band, .routing-band { grid-template-columns: 1fr; } .runtime-band dl { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 @media(max-width: 600px) { .models-workspace { padding: 24px 16px 100px; } h1 { font-size: 24px; } .model-row { grid-template-columns: minmax(0,1fr); } }
