@@ -170,7 +170,7 @@ class Config:
     }
 
     # Sicherheit & Server
-    JARVIS_PASSWORD: str = os.getenv("JARVIS_PASSWORD", "jarvis")
+    JARVIS_PASSWORD: str = os.getenv("JARVIS_PASSWORD", "")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     if not SECRET_KEY:
         # Auto-generieren und in Datei persistieren

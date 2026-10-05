@@ -35,7 +35,7 @@ const CHAT = fs.readFileSync(path.join(ROOT, 'frontend/js/chat.js'), 'utf8');
 
 /* Fenster mit Attrappen aufbauen. Wichtig: WebSocket und fetch MUESSEN vor
  * dem eval von chat.js stehen – chat.js verbindet sich beim Start. */
-function fenster() {
+function fenster({ voice = false } = {}) {
     const dom = new JSDOM(HTML, { url: 'https://localhost/chat', runScripts: 'outside-only' });
     const w = dom.window;
     const util = require('util');
@@ -66,6 +66,23 @@ function fenster() {
     FakeWS.prototype.close = function () { this.readyState = 3; };
     w.WebSocket = FakeWS;
     w.sockets = sockets;
+    w.__recognitions = []; w.__audios = [];
+    if (voice) {
+        w.SpeechRecognition = class {
+            constructor() { w.__recognitions.push(this); }
+            start() { this.onstart?.(); }
+            stop() { this.onend?.(); }
+            abort() { this.aborted = true; }
+        };
+        w.Audio = class {
+            constructor(src) { this.src = src; w.__audios.push(this); }
+            async play() { this.onplaying?.(); }
+            pause() { this.paused = true; }
+        };
+        w.URL.createObjectURL = () => 'blob:fixture';
+        w.URL.revokeObjectURL = () => {};
+        w.confirm = () => true;
+    }
 
     // Alle Netzaufrufe der Seite beantworten (Profile, Status, Sitzungen …).
     w.fetch = function (url) {
@@ -77,6 +94,7 @@ function fenster() {
             ok: true, status: 200,
             json: () => Promise.resolve(body),
             text: () => Promise.resolve(JSON.stringify(body)),
+            blob: () => Promise.resolve(new w.Blob(['fixture'])),
         });
     };
     // Angemeldet starten, sonst haengt chat.js im Login-Bildschirm.
@@ -86,6 +104,8 @@ function fenster() {
 
     w.eval(I18N);
     w.eval(CHATLIB);
+    w.eval(fs.readFileSync(path.join(ROOT, 'frontend/js/audio_output.js'), 'utf8'));
+    w.eval(fs.readFileSync(path.join(ROOT, 'frontend/js/conversation.js'), 'utf8'));
     w.eval(CHAT);
     w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     return { dom, w, FakeWS };
@@ -187,6 +207,40 @@ if (u && u.w.sockets.length) {
     check('Abbruch nach Lauf-Ende meldet nichts',
         !statusZeilen(u2.w).some((t) => /erbindung unterbrochen/.test(t)));
     u2.dom.window.close();
+
+    section('7. Sprachgespraech im echten Chat-Modul');
+    const v = fenster({ voice: true });
+    await sleep(120);
+    const voiceSocket = v.FakeWS.letzter;
+    const toggle = v.w.document.getElementById('conversation-mode');
+    toggle.checked = true; toggle.dispatchEvent(new v.w.Event('change'));
+    check('Gespraech startet mit Mikrofon', v.w.document.body.dataset.activity === 'listening');
+    v.w.__recognitions.at(-1).onresult({ results: [[{ transcript: 'Was steht heute an?' }]] });
+    await sleep(50);
+    check('Erkannter Satz wird als echter WS-Auftrag gesendet', voiceSocket.gesendet.some(raw => JSON.parse(raw).text === 'Was steht heute an?'));
+    const event = (type, data) => voiceSocket.onmessage({ data: JSON.stringify({ type, ...data }) });
+    const agent = { agent_id: 'a1', is_sub_agent: false };
+    event('agent_event', { event: 'started', agent });
+    event('status', { message: 'Ein Termin.', highlight: true });
+    event('agent_event', { event: 'finished', agent });
+    await sleep(30);
+    check('Antwort wird ohne separaten TTS-Schalter gesprochen', v.w.__audios.length === 1 && v.w.document.body.dataset.activity === 'speaking');
+    v.w.__audios[0].onended();
+    check('Nach Audio-Ende hoert der Chat wieder zu', v.w.document.body.dataset.activity === 'listening');
+    event('agent_event', { event: 'started', agent });
+    v.w.document.getElementById('btn-mic').click();
+    check('Mikrofon-Unterbrechung sendet Stop ans Backend', voiceSocket.gesendet.some(raw => JSON.parse(raw).action === 'stop'));
+    const taskCount = () => voiceSocket.gesendet.filter(raw => JSON.parse(raw).type === 'task').length;
+    const before = taskCount();
+    v.w.__recognitions.at(-1).onresult({ results: [[{ transcript: 'Pruefe nur heute' }]] });
+    await sleep(20);
+    check('Neue Anweisung wartet auf Lauf-Ende', taskCount() === before);
+    event('agent_event', { event: 'finished', agent });
+    await sleep(50);
+    check('Neue Anweisung folgt erst nach Backend-Bestaetigung', taskCount() === before + 1);
+    voiceSocket.onclose();
+    check('Verbindungsverlust schaltet Gespraech aus', !toggle.checked);
+    v.dom.window.close();
 }
 
 const ok = results.filter((r) => r.ok).length;

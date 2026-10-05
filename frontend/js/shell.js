@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   if (window.parent !== window || document.getElementById('jarvis-shell')) return;
-  const paths = ['/dashboard', '/assistant', '/chat', '/wissen', '/settings', '/portal'];
+  const paths = ['/dashboard', '/assistant', '/chat', '/wissen', '/settings', '/portal', '/models'];
   if (!paths.includes(location.pathname)) return;
   const links = [
     { name: 'Kontrollzentrum', path: '/dashboard', icon: 'orbit' },
@@ -11,6 +11,7 @@
     { name: 'Benutzer-Chat', path: '/userchat', icon: 'users' },
     { name: 'Portal', path: '/portal', icon: 'layout-grid' },
     { name: 'KI-Profile', path: '/settings#profiles', icon: 'cpu', admin: true },
+    { name: 'Lokale Modelle', path: '/models', icon: 'hard-drive', admin: true },
     { name: 'Agentenrollen', path: '/settings#agent_orchestrator', icon: 'workflow', admin: true },
     { name: 'Tasks', path: '/settings#cron', icon: 'calendar-clock', admin: true },
     { name: 'Skills', path: '/settings#skills', icon: 'puzzle', admin: true },

@@ -3911,7 +3911,7 @@ KRITISCH – Autonomie-Regeln:
         _DENY_NAME = ("id_rsa", "id_ed25519", "id_dsa", ".env", "settings.json",
                       "credentials", "ad_cache.json", "license.json",
                       "knowledge_sync.json", "agent_roles.json", "security_state.json",
-                      "scheduled_jobs.json", "file_watchers.json", ".owners.json")
+                      "scheduled_jobs.json", "file_watchers.json", ".owners.json", "local-models.sqlite3")
 
         def _ist_geheim(pfad) -> bool:
             low = pfad.name.lower()
@@ -4221,6 +4221,7 @@ class AgentManager:
         # Benutzer die Internet-/LDAP-Restriktion durch Delegation an einen frisch
         # gespawnten Sub-Agent umgehen (Default waere 'erlaubt').
         if parent is not None:
+            agent._owner_username = parent.actor_name()
             agent._current_user_internet = getattr(parent, '_current_user_internet', True)
             agent._current_user_sap = getattr(parent, '_current_user_sap', True)
             agent._current_username = getattr(parent, '_current_username', '')
@@ -4257,6 +4258,7 @@ class AgentManager:
         # Sicherheits-Kontext des Auftraggebers uebernehmen (gleiche Begruendung
         # wie in spawn_sub_agent: der Standard waere "erlaubt").
         if parent is not None:
+            agent._owner_username = parent.actor_name()
             agent._current_username = getattr(parent, "_current_username", "")
             agent._current_actor_privileged = parent._actor_is_privileged()
             agent._current_user_internet = getattr(parent, "_current_user_internet", True)

@@ -104,11 +104,12 @@ _SECRET_NAMES = {
     ".owners.json",
     ".env", "settings.json", "memory.json", "auth_state.json",
     "credentials.json", "id_rsa", "id_ed25519", "id_dsa", ".htpasswd",
-    ".netrc", "shadow", "gshadow", "sudoers",
+    ".netrc", "shadow", "gshadow", "sudoers", "local-models.sqlite3",
+    "local-models.sqlite3-wal", "local-models.sqlite3-shm",
 }
 _SECRET_SUFFIX = {".key", ".pem", ".crt", ".cer", ".p12", ".pfx", ".jks", ".keystore"}
 _SECRET_DIRPARTS = {".ssh", ".git", "certs"}
-_SYSTEM_DENY_PREFIX = ("/root", "/boot", "/proc", "/sys")
+_SYSTEM_DENY_PREFIX = ("/root", "/boot", "/proc", "/sys", "/var/lib/jarvis-models")
 # App-interne, sensible Pfade unterhalb des Projekts (relativ)
 _APP_DENY_REL = (
     ".env", "settings.json", "data/settings.json", "data/memory.json",
@@ -117,7 +118,7 @@ _APP_DENY_REL = (
     # verweigerte den Zugriff nur mit der Begruendung "nicht im Arbeitsbereich".
     # Seit 2026-08-05 macht das einen Unterschied – die Begruendung entscheidet,
     # ob ein abgewiesener Zugriff als Angriffsindiz zaehlt (fs_target_sensitive).
-    "data/chats",
+    "data/chats", "data/local_ai",
     "data/instructions", "data/logs", "data/conv_log.jsonl",
     "data/audit_log.jsonl", "certs",
     # Zeitgesteuerte Auftraege/Trigger ALLER Benutzer + Sicherheits-Zustand:
@@ -190,7 +191,7 @@ _APP_DENY_REL = (
 #
 # data/knowledge bleibt ABSICHTLICH lesbar: die Shell soll Wissensdateien
 # verarbeiten koennen (READ_ROOTS erlaubt es ausdruecklich).
-PRIVATE_DIRS = ("data/documents", "data/chats", "data/logs")
+PRIVATE_DIRS = ("data/documents", "data/chats", "data/logs", "data/local_ai")
 PRIVATE_MODE = 0o750
 
 # Einzelne Dateien direkt in data/, die kein Domain-Nutzer lesen darf. Das
@@ -401,7 +402,7 @@ SHELL_SECRET_PATHS = re.compile(
     # Klartext-Kennwoerter der SAP-Benutzer.
     r'sap_accounts\.json\b|\.sapkey\b|'
     # data/chats: fremde Chat-Verlaeufe (in der Shell zusaetzlich per 0750 gesperrt)
-    r'data/chats\b|'
+    r'data/chats\b|data/local_ai\b|local-models\.sqlite3\b|'
     r'/root/|(?:^|\s)/root\b|\.ssh/|\bid_rsa\b|\bid_ed25519\b|\bid_dsa\b|\.netrc\b|'
     r'/etc/shadow\b|/etc/gshadow\b|/etc/sudoers|'
     r'\.key\b|\.pem\b|\.crt\b|\.p12\b|\.pfx\b|\.jks\b|'

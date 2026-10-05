@@ -44,7 +44,11 @@
 
     // TTS-State
     let ttsEnabled = false;
-    const _speechOutput = new window.JarvisAudioOutput(cockpitActivity);
+    let conversation = null;
+    const _speechOutput = new window.JarvisAudioOutput(state => {
+        if (conversation?.enabled) conversation.audioState(state);
+        else cockpitActivity(state);
+    });
     let _ttsBuf = '';              // sammelt Bot-Text während Streaming
 
     // Feedback-State
@@ -150,12 +154,12 @@
         _speechOutput.stop();
     }
 
-    async function speak(text) {
-        if (!ttsEnabled || !text) return;
+    async function speak(text, onDone = null) {
+        if ((!ttsEnabled && !conversation?.enabled) || !text) { onDone?.('ended'); return; }
         const clean = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
-        if (!clean) return;
+        if (!clean) { onDone?.('ended'); return; }
         const voice = chatTtsVoice?.value || '';
-        await _speechOutput.speak(clean, voice, token);
+        await _speechOutput.speak(clean, voice, token, onDone);
     }
 
     if (btnTtsChat) {
@@ -459,6 +463,7 @@
     };
 
     function logout() {
+        conversation?.stop();
         stopSpeak();
         // Abmeldung beim Server melden, SOLANGE das Token noch gilt – danach
         // ist sie nicht mehr authentifizierbar. Ohne dieses Signal kann der
@@ -505,6 +510,7 @@
         };
 
         ws.onclose = () => {
+            conversation?.stop('error');
             // Der Lauf ist fuer dieses Fenster verloren: das Backend sendet
             // 'finished' an den TOTEN Socket (und _send_status verschluckt den
             // Fehler), ein Reconnect erzeugt eine NEUE Verbindung, an die
@@ -780,6 +786,8 @@
 
     // Stop-Button
     stopBtn.addEventListener('click', () => {
+        conversation?.stop();
+        stopSpeak();
         wsSend({ type: 'control', action: 'stop' });
     });
 
@@ -807,6 +815,7 @@
                 break;
 
             case 'error':
+                conversation?.stop('error');
                 cockpitActivity('error');
                 if (msg.message === 'Nicht autorisiert') {
                     logout();
@@ -822,6 +831,7 @@
                 break;
 
             case 'security_blocked':
+                conversation?.stop('error');
                 cockpitActivity('error');
                 if (window.SecurityIncidents) window.SecurityIncidents.fetchAndShowBlocked();
                 break;
@@ -928,7 +938,8 @@
         const isSub = !!agent.is_sub_agent;
 
         if (ev === 'started' && !isSub) {
-            cockpitActivity('working');
+            conversation?.started();
+            if (!conversation?.enabled) cockpitActivity('working');
             // Hauptagent: neuer Lauf -> Agent-Infos/Sub-Streams zuruecksetzen
             agentRunning = true;
             _startRunWatchdog();
@@ -940,7 +951,7 @@
             _activeAgentId = '_main';
             if (agent.agent_id) _agentInfos[agent.agent_id] = { label: agent.label || 'Jarvis', state: 'running', is_sub_agent: false };
         } else if (ev === 'finished' && !isSub) {
-            cockpitActivity('idle');
+            if (!conversation?.enabled) cockpitActivity('idle');
             agentRunning = false;
             _stopRunWatchdog();
             stopBtn.classList.add('hidden');
@@ -950,7 +961,8 @@
             _updateContextIndicator();
             const toSpeak = _ttsBuf.trim();
             _ttsBuf = '';
-            if (toSpeak) speak(toSpeak);
+            if (conversation?.enabled) conversation.finished(toSpeak);
+            else { conversation?.finished(''); if (toSpeak) speak(toSpeak); }
             // Antwort-Routing: IMMER in die Sitzung schreiben, in der die Frage
             // gestellt wurde – nicht in den gerade geoeffneten Verlauf.
             const _isRemote = _persistBotAnswer();
@@ -2488,6 +2500,51 @@
     const btnMic = $('btn-mic');
     let isRecording = false;
     let recognition = null;
+    const conversationToggle = $('conversation-mode');
+    const conversationStatus = $('conversation-status');
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition && conversationToggle) {
+        conversation = new window.JarvisConversation({
+            createRecognition: () => {
+                const input = new SpeechRecognition();
+                input.lang = window._lang === 'en' ? 'en-US' : 'de-DE';
+                return input;
+            },
+            send: async text => {
+                const generation = conversation.generation;
+                await _ensureSession();
+                if (!conversation.enabled || generation !== conversation.generation || !ws || ws.readyState !== 1 || agentRunning) return false;
+                msgInput.value = text;
+                sendMessage(true);
+                return true;
+            },
+            cancel: () => wsSend({ type: 'control', action: 'stop' }),
+            stopAudio: stopSpeak,
+            speak,
+            onState: (state, enabled) => {
+                conversationToggle.checked = enabled;
+                const labels = { idle: '', listening: 'Hoert zu', understanding: 'Versteht', thinking: 'Denkt', acting: 'Fuehrt aus', waiting: 'Wartet', speaking: 'Spricht', error: 'Sprachgespraech unterbrochen' };
+                conversationStatus.textContent = labels[state] || '';
+                btnMic?.classList.toggle('recording', enabled && state === 'listening');
+                cockpitActivity(state);
+            },
+        });
+        conversationToggle.addEventListener('change', () => {
+            if (!conversationToggle.checked) { conversation.stop(); return; }
+            if (!token || !ws || ws.readyState !== 1) { conversation.stop('error'); return; }
+            // Browser STT and configured TTS may transmit audio/text to external services.
+            if (!window.confirm('Sprachgespraech starten? Die Browser-Spracherkennung und Sprachausgabe koennen Audio oder Text an externe Dienste uebertragen.')) {
+                conversationToggle.checked = false; return;
+            }
+            recognition?.abort();
+            isRecording = false;
+            conversation.running = agentRunning;
+            conversation.start();
+        });
+    } else if (conversationToggle) {
+        conversationToggle.disabled = true;
+        conversationStatus.textContent = 'Spracherkennung in diesem Browser nicht verfuegbar';
+    }
 
     if (btnMic) {
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -2498,11 +2555,13 @@
             recognition.lang = 'de-DE';
 
             recognition.onstart = () => {
+                if (conversation?.enabled) { recognition.abort(); return; }
                 cockpitActivity('listening');
                 isRecording = true;
                 btnMic.classList.add('recording');
             };
             recognition.onresult = (e) => {
+                if (conversation?.enabled) return;
                 const transcript = e.results[0][0].transcript;
                 if (msgInput && transcript && transcript.trim()) {
                     msgInput.value = transcript.trim();
@@ -2517,6 +2576,7 @@
             recognition.onend = () => stopMic();
 
             function stopMic() {
+                if (conversation?.enabled) { isRecording = false; return; }
                 cockpitActivity(agentRunning ? 'working' : 'idle');
                 isRecording = false;
                 btnMic.classList.remove('recording');
@@ -2524,6 +2584,7 @@
             }
 
             btnMic.addEventListener('click', () => {
+                if (conversation?.enabled) { conversation.interrupt(); return; }
                 if (isRecording) {
                     stopMic();
                     // Wenn Text im Feld → direkt senden
@@ -2541,7 +2602,7 @@
         }
     }
 
-    window.addEventListener('pagehide', stopSpeak);
+    window.addEventListener('pagehide', () => { conversation?.stop(); recognition?.abort(); stopSpeak(); });
 
     // ═════════════════════════════════════════════════════════════
     //  FEEDBACK

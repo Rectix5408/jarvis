@@ -47,7 +47,7 @@ import psutil
 
 # ─── Docker-Modus: PAM durch ENV-Variable ersetzen ───────────────────
 _DOCKER_MODE = os.getenv("JARVIS_DOCKER", "0") == "1"
-_JARVIS_PASSWORD = os.getenv("JARVIS_PASSWORD", "jarvis")
+_JARVIS_PASSWORD = os.getenv("JARVIS_PASSWORD", "")
 
 if not _DOCKER_MODE:
     import pam as _pam_module
@@ -1931,7 +1931,7 @@ def authenticate_linux_user(username: str, password: str, details: dict | None =
                 pw_hash = hashlib.sha256(password.encode()).hexdigest()
                 local_ok = hmac.compare_digest(pw_hash, docker_pw)
             else:
-                local_ok = password == _JARVIS_PASSWORD
+                local_ok = bool(_JARVIS_PASSWORD) and hmac.compare_digest(password.encode(), _JARVIS_PASSWORD.encode())
         else:
             local_ok = _pam.authenticate(username, password, service="login")
         if local_ok:
@@ -5147,6 +5147,32 @@ async def upload_custom_cert(request: Request, user: str = Depends(require_local
 
 
 
+# Local model operations use the same verified administrator dependency as profiles.
+from backend.local_models import LocalModels, make_router as _local_models_router
+
+
+def _audit_local_model(user, action, model):
+    from backend.audit_log import log_tool
+    log_tool(user, action, {"model": model}, 0, 0)
+
+
+_local_models = LocalModels(
+    config.SETTINGS_FILE.parent / "local_ai",
+    os.environ.get("JARVIS_OLLAMA_URL", "http://127.0.0.1:11434"),
+    os.environ.get("JARVIS_MODEL_DISK_PATH", ""),
+    audit=_audit_local_model,
+)
+app.include_router(_local_models_router(_local_models, require_local_auth, config))
+app.add_event_handler("startup", _local_models.start)
+app.add_event_handler("shutdown", _local_models.close)
+
+
+@app.get("/models", response_class=HTMLResponse)
+async def models_page():
+    return HTMLResponse((FRONTEND_DIR / "models.html").read_text(encoding="utf-8"),
+                        headers={"Cache-Control": "no-store"})
+
+
 # ─── Profil-Verwaltung ─────────────────────────────────────────────
 @app.get("/api/profiles")
 async def get_profiles(user: str = Depends(require_auth)):
@@ -6012,7 +6038,8 @@ async def health():
         services["whatsapp_bridge"] = "down"
 
     # LLM konfiguriert?
-    services["llm"] = "ok" if config.active_profile.get("api_key") else "no_key"
+    # Configuration is not proof of reachability; local profiles need no API key.
+    services["llm"] = "configured" if config.active_profile.get("model") else "not_configured"
 
     return JSONResponse({
         "status": "ok" if not errors else "warning",
@@ -14102,7 +14129,7 @@ def _transcribe_audio(filepath: str, language: str = "de", initial_prompt: str =
         text = " ".join([seg.text for seg in segments]).strip()
         duration = round(_time.time() - t0, 2)
         if text:
-            _tr_log("INFO", f"Transkription OK ({duration}s): {text[:100]}", source=source)
+            _tr_log("INFO", f"Transkription OK ({duration}s, {len(text)} Zeichen)", source=source)
             # Der VOLLE Text ist nur im WhatsApp-Debug-Modus interessant und bleibt
             # deshalb an wa_log gebunden (debug_only). Fremde Quellen schreiben ihn
             # nicht ins Journal – dort stehen sonst komplette Diktate im Klartext.
@@ -14485,13 +14512,25 @@ async def cpu_broadcast(ws: WebSocket):
     """Sendet CPU-Last alle 2 Sekunden an den Client."""
     try:
         while True:
-            cpu = psutil.cpu_percent(interval=0)
-            await ws.send_json({"type": "cpu", "value": cpu})
+            credential = getattr(ws.state, "jarvis_credential", "")
+            user = verify_token(credential) if credential else None
+            authenticated = bool(user and not _user_must_change(user)
+                                 and not security_guard.is_blocked(user)
+                                 and _login_still_allowed(user))
+            if authenticated or (credential and _is_valid_agent_key(credential)):
+                cpu = psutil.cpu_percent(interval=0)
+                await ws.send_json({"type": "cpu", "value": cpu})
             await asyncio.sleep(2)
     except asyncio.CancelledError:
         pass
     except Exception:
         pass
+
+
+def _ws_may_access_agent(ws, agent) -> bool:
+    user = _get_ws_username(ws)
+    return bool(user and (_is_admin_user(user)
+                         or getattr(agent, "_owner_username", "") == user))
 
 
 async def handle_ws_message(ws: WebSocket, msg: dict):
@@ -14503,6 +14542,8 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
     # Token pruefen: Login-Token ODER Agent API Key akzeptieren
     token = msg.get("token", "")
     if msg_type != "ping":
+        ws.state.jarvis_credential = ""
+        _ws_usernames.pop(id(ws), None)
         token_username = verify_token(token)
         is_login_token = token_username is not None
         # Login-Token ODER ein gueltiger Agent-API-Key (Legacy ODER benannt).
@@ -14533,6 +14574,8 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
                 await ws.send_json({"type": "session_invalid",
                                     "message": "Keine Anmeldeberechtigung mehr – bitte neu anmelden."})
                 return
+
+        ws.state.jarvis_credential = token
 
     # Reiner Registrierungs-Handshake: setzt nur _ws_usernames (oben) fuer Live-Sync
     if msg_type == "hello":
@@ -14906,6 +14949,9 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
         if target_agent_id and agent_manager.get_agent(target_agent_id):
             target = agent_manager.get_agent(target_agent_id)
             if target.is_sub_agent:
+                if not _ws_may_access_agent(ws, target):
+                    await ws.send_json({"type": "error", "message": "Keine Berechtigung fuer diesen Agenten"})
+                    return
                 target._current_user_internet = _ws_internet
                 target._current_user_sap = _ws_sap
                 asyncio.create_task(target.run_task(task_text, ws, client_type=client_type, client_ip=client_ip, username=_ws_user, lang=ui_lang, attachments=image_attachments, kb_groups=kb_groups, reasoning_effort=reasoning_effort))
@@ -14995,6 +15041,9 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
         asyncio.create_task(_run_main_agent_and_notify())
 
     elif msg_type == "spawn_agent":
+        if not _is_admin_user(_get_ws_username(ws)):
+            await ws.send_json({"type": "error", "message": "Nur Administratoren duerfen freie Sub-Agenten starten"})
+            return
         # Sub-Agent starten (vom Frontend oder Hauptagent)
         from backend.agent import AgentManager
 
@@ -15009,6 +15058,9 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
             return
 
         sub = agent_manager.spawn_sub_agent(label, task_text)
+        sub._owner_username = _get_ws_username(ws)
+        sub._current_username = sub._owner_username
+        sub._current_actor_privileged = True
         asyncio.create_task(agent_manager.run_sub_agent(sub, task_text, ws))
 
     elif msg_type == "control":
@@ -15027,6 +15079,10 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
             await ws.send_json({"type": "error", "message": "Kein Agent aktiv"})
             return
 
+        if target.is_sub_agent and not _ws_may_access_agent(ws, target):
+            await ws.send_json({"type": "error", "message": "Keine Berechtigung fuer diesen Agenten"})
+            return
+
         if action == "stop":
             # Geteilter Hauptagent: nur den Lauf DIESES Benutzers abbrechen, damit
             # parallele Anfragen anderer Nutzer ungestoert weiterlaufen. Eigene
@@ -15039,13 +15095,18 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
             await ws.send_json({"type": "status", "message": "⏹️ Anfrage gestoppt",
                                 "agent_id": target.agent_id})
         elif action == "stop_all":
+            if not _is_admin_user(_get_ws_username(ws)):
+                await ws.send_json({"type": "error", "message": "Nur Administratoren duerfen alle Agents stoppen"})
+                return
             if agent_manager:
                 agent_manager.stop_all()
             await ws.send_json({"type": "status", "message": "⏹️ Alle Agents gestoppt"})
 
     elif msg_type == "get_agents":
         # Agent-Liste anfordern
-        agents = agent_manager.get_all_info() if agent_manager else []
+        agents = ([agent.get_info() for agent in agent_manager.agents.values()
+                   if not agent.is_sub_agent or _ws_may_access_agent(ws, agent)]
+                  if agent_manager else [])
         await ws.send_json({"type": "agent_list", "agents": agents})
 
     elif msg_type == "register":
@@ -15087,7 +15148,7 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
             transcript = await asyncio.to_thread(
                 _transcribe_audio, tmp_path, "de", "Jarvis Sprachsteuerung:", "transcribe_only")
             os.unlink(tmp_path)
-            print(f"[transcribe_only] Transkript: {transcript!r}", flush=True)
+            print(f"[transcribe_only] Transkription abgeschlossen ({len(transcript)} Zeichen)", flush=True)
             await ws.send_json({"type": "voice_transcript", "text": transcript})
         except Exception as e:
             print(f"[transcribe_only] Fehler: {e}", flush=True)
@@ -15120,7 +15181,7 @@ async def handle_ws_message(ws: WebSocket, msg: dict):
             import re
             clean = re.sub(r'[^\w\s]', '', transcript.lower())
             detected = phrase in clean
-            print(f"[wakeword] '{transcript}' → {'JA' if detected else 'nein'}", flush=True)
+            print(f"[wakeword] Erkennung: {'JA' if detected else 'nein'}", flush=True)
             await ws.send_json({
                 "type": "wakeword_result",
                 "text": transcript,

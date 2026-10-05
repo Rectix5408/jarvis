@@ -180,6 +180,11 @@ lauf(mc._aus_openai_kompatibel(_Client({"/api/show": _Antwort(200, OLLAMA)}),
                                "http://x:11434/v1", "", "gemma4:31b", erg))
 f = erg["faehigkeiten"]
 pruefe(erg["quelle"] == "ollama-show", "Ollama-Quelle erkannt")
+for url in ("http://localhost:11434/v1", "http://localhost:11434/v1/chat/completions", "http://localhost:11434/v1/chat/completions/"):
+    normalized_client = _Client({"/api/show": _Antwort(200, OLLAMA)})
+    lauf(mc._aus_openai_kompatibel(normalized_client, url, "", "test-model", {**erg, "faehigkeiten": mc._leer()}))
+    pruefe(normalized_client.aufrufe[0][1] == "http://localhost:11434/api/show",
+           "Ollama-Metadaten normalisieren die vollstaendige Profil-URL: " + url)
 pruefe(f["vision"] is True and f["tools"] is True and f["thinking"] is True,
        "vision/tools/thinking aus capabilities")
 pruefe(f["bild"] is False and f["audio"] is False,

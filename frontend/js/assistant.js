@@ -13,7 +13,7 @@ if (location.pathname === '/assistant') {
   const activity = document.createElement('p'); activity.className = 'assistant-context-detail'; activity.textContent = 'Noch kein Auftrag gestartet.';
   const knowledge = document.createElement('a'); knowledge.href = '/wissen'; knowledge.textContent = 'Wissen oeffnen';
   context.append(title, stage, status, label, activity, knowledge); main.append(context);
-  const names = { idle: 'Bereit', listening: 'Hoert zu', working: 'Arbeitet', speaking: 'Spricht', error: 'Gespraech unterbrochen' };
+  const names = { idle: 'Bereit', listening: 'Hoert zu', understanding: 'Versteht', thinking: 'Denkt', planning: 'Plant', acting: 'Fuehrt aus', waiting: 'Wartet', working: 'Arbeitet', speaking: 'Spricht', error: 'Gespraech unterbrochen' };
   const update = state => { if (names[state]) { context.dataset.state = state; status.textContent = names[state]; } };
   update(document.body.dataset.activity || 'idle');
   window.addEventListener('jarvis:activity', event => update(event.detail?.state));

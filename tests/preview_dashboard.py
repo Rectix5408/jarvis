@@ -21,7 +21,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
         pages = {"/": "settings.html", "/dashboard": "dashboard.html",
                  "/chat": "chat.html", "/assistant": "chat.html", "/portal": "portal.html",
                  "/settings": "settings.html", "/wissen": "wissen.html",
-                 "/userchat": "userchat.html"}
+                 "/userchat": "userchat.html", "/models": "models.html"}
         if route in pages:
             self.path = "/" + pages[route]
         elif route.startswith("/static/"):

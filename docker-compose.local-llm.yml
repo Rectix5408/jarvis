@@ -8,6 +8,11 @@ services:
     pull_policy: build
     env_file:
       - .env
+    environment:
+      JARVIS_OLLAMA_URL: "http://ollama:11434"
+      JARVIS_MODEL_DISK_PATH: "/var/lib/jarvis-models"
+    volumes:
+      - ollama-models:/var/lib/jarvis-models:ro
     depends_on:
       ollama:
         condition: service_healthy

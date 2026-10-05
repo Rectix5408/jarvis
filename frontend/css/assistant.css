@@ -1,4 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+.conversation-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 4px 10px 8px; font-size: 13px; }
+.conversation-controls label { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+.conversation-controls input { accent-color: var(--accent-primary, #48d8cb); width: 16px; height: 16px; }
+#conversation-status { color: var(--text-secondary, #a8b5b6); overflow-wrap: anywhere; }
 .assistant-workspace .chat-main { display: grid; grid-template-columns: minmax(0, 1fr) 280px; grid-template-rows: auto auto minmax(0, 1fr) auto; min-width: 0; }
 .assistant-workspace .chat-main > .topbar { grid-column: 1 / -1; grid-row: 1; }
 .assistant-workspace #msg-select-bar { grid-column: 1; grid-row: 2; }

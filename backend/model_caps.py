@@ -222,6 +222,9 @@ async def _aus_anthropic(c, key: str, model: str, erg: dict) -> None:
 async def _aus_openai_kompatibel(c, api_url: str, key: str, model: str,
                                  erg: dict) -> None:
     kopf = {"Authorization": f"Bearer {key}"} if key else {}
+    api_url = api_url.rstrip("/")
+    if api_url.endswith("/chat/completions"):
+        api_url = api_url[:-len("/chat/completions")]
     basis = api_url[:-3].rstrip("/") if api_url.endswith("/v1") else api_url
 
     # 1) Ollama zuerst: nur dort gibt es echte `capabilities`.

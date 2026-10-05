@@ -149,8 +149,10 @@ WA_BRIDGE_DIR="/app/services/whatsapp-bridge"
 if [[ -f "$WA_BRIDGE_DIR/index.js" ]] && command -v node &>/dev/null; then
     log "Starte WhatsApp-Bridge auf Port 3001..."
     cd "$WA_BRIDGE_DIR"
-    export JARVIS_WEBHOOK="https://localhost/api/whatsapp/incoming"
-    export NODE_TLS_REJECT_UNAUTHORIZED=0
+    export JARVIS_WEBHOOK="${JARVIS_WEBHOOK:-https://localhost/api/whatsapp/incoming}"
+    # Trust the local certificate without disabling verification for WhatsApp or other hosts.
+    unset NODE_TLS_REJECT_UNAUTHORIZED
+    export NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-$CERT_DIR/server.crt}"
     node index.js &
     WA_PID=$!
     sleep 1

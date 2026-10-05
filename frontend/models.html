@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JARVIS | Lokale Modelle</title>
+  <link rel="icon" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/theme.css?v=11">
+  <link rel="stylesheet" href="/static/css/shell.css?v=1">
+  <link rel="stylesheet" href="/static/css/models.css?v=1">
+  <script src="/static/vendor/lucide/lucide.min.js" defer></script>
+  <script src="/static/js/shell.js?v=1" defer></script>
+  <script src="/static/js/models.js?v=1" defer></script>
+</head>
+<body>
+  <main class="models-workspace">
+    <header class="models-header"><div><span class="models-eyebrow">JARVIS / LOCAL AI</span><h1>Lokale Modelle</h1></div><button id="refresh-models" class="model-icon" title="Aktualisieren" aria-label="Aktualisieren"><i data-lucide="refresh-cw"></i></button></header>
+    <p id="models-message" role="status" aria-live="polite">Verbindung wird geprueft.</p>
+    <a id="models-login" href="/assistant" hidden>Anmelden</a>
+    <div id="models-content" hidden>
+      <section class="runtime-band" aria-labelledby="runtime-heading"><div><h2 id="runtime-heading">Ollama</h2><p id="runtime-status">Status unbekannt</p></div><dl id="hardware"></dl></section>
+      <section aria-labelledby="installed-heading"><h2 id="installed-heading">Installiert</h2><div id="installed-models" class="model-list"></div></section>
+      <section aria-labelledby="downloads-heading"><h2 id="downloads-heading">Installationen</h2><div id="model-downloads" class="model-list"></div></section>
+      <section aria-labelledby="catalog-heading"><h2 id="catalog-heading">Modellkatalog</h2><div id="model-catalog" class="model-list"></div></section>
+    </div>
+  </main>
+  <dialog id="model-details"><header><h2>Modelldetails</h2><button id="close-model-details" class="model-icon" title="Schliessen" aria-label="Schliessen"><i data-lucide="x"></i></button></header><pre id="model-details-content"></pre></dialog>
+</body>
+</html>

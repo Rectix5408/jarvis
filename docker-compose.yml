@@ -5,7 +5,7 @@
 # Schnellstart:
 #   docker compose up -d
 #   Browser: https://<server-ip>  (SSL-Warnung bestätigen)
-#   Login:   jarvis / jarvis
+#   Login:   jarvis / eigenes JARVIS_PASSWORD aus .env
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -24,9 +24,9 @@ services:
       JARVIS_DOCKER: "1"
       # WhatsApp-Bridge Webhook (HTTPS wegen self-signed cert im Container)
       JARVIS_WEBHOOK: "https://localhost/api/whatsapp/incoming"
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      NODE_EXTRA_CA_CERTS: "/app/certs/server.crt"
       # Web-Login Passwort (Benutzername ist immer "jarvis")
-      JARVIS_PASSWORD: "${JARVIS_PASSWORD:-jarvis}"
+      JARVIS_PASSWORD: "${JARVIS_PASSWORD:?JARVIS_PASSWORD in .env setzen}"
       # !! WICHTIG: Auf die eigene Server-IP setzen – sonst wird das SSL-Zertifikat
       # !! von Windows abgelehnt! Beispiel: SERVER_IP: "1.2.3.4"
       SERVER_IP: "${SERVER_IP:-127.0.0.1}"

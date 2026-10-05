@@ -194,6 +194,10 @@
         <div class="attach-preview-bar" id="attach-preview-bar" style="display:none;"></div>
         <!-- Wissensgruppen-Filter (wird per JS befüllt) -->
         <div id="kb-filter-slot" style="padding:0 10px 4px;"></div>
+        <div class="conversation-controls">
+            <label><input type="checkbox" id="conversation-mode"> Sprachgespraech</label>
+            <span id="conversation-status" role="status" aria-live="polite"></span>
+        </div>
         <div class="input-row">
             <button class="btn-stop hidden" id="btn-stop" data-i18n-title="chat.stop_agent" title="Anfrage stoppen">✕</button>
             <button class="btn-attach" id="btn-attach" title="Datei anhängen (Bild, Audio, Video, PDF)">
@@ -352,8 +356,9 @@ sudo update-ca-certificates</code></pre>
 <script src="/static/js/kbgroupfilter.js?v=7"></script>
 <script src="/static/js/profile_switcher.js?v=5"></script>
 <script src="/static/js/sessions.js?v=4"></script>
-<script src="/static/js/audio_output.js?v=1"></script>
-<script src="/static/js/chat.js?v=99"></script>
+<script src="/static/js/audio_output.js?v=2"></script>
+<script src="/static/js/conversation.js?v=1"></script>
+<script src="/static/js/chat.js?v=100"></script>
 <!-- Interaktive Charts (```chartjs) – Chart.js lokal gevendort (CSP: kein CDN) -->
 <script src="/static/js/vendor/chart.umd.min.js?v=1"></script>
 <!-- Chart.js-Plugins (MIT). MUESSEN nach chart.umd.min.js kommen – ihre
