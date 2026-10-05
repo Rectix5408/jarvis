@@ -126,7 +126,7 @@ from google.genai import types
 from fastapi import WebSocket
 
 from backend.config import config
-from backend.llm import get_provider
+from backend.llm import get_provider, _compact_tool_result
 
 
 def _ist_nur_selbstgespraech(text: str) -> bool:
@@ -1843,6 +1843,27 @@ KRITISCH – Autonomie-Regeln:
         _conv_messages = []   # Für conv_log: alle LLM-Ein/Ausgaben dieser Konversation
         _task_start_time = time.time()
         try:
+            try:
+                from backend.ai.deterministic import answer as _deterministic_answer
+                _main_mod = sys.modules.get("backend.main")
+                _det = await _deterministic_answer(
+                    task_text,
+                    agent_manager=getattr(_main_mod, "agent_manager", None),
+                )
+            except Exception:
+                _det = None
+            if _det:
+                await self._send_status(ws, _det, highlight=True)
+                await self._send_status(ws, "✅ Aufgabe abgeschlossen")
+                await self._send_llm_stats(
+                    ws,
+                    int((time.time() - _task_start_time) * 1000),
+                    0,
+                    0,
+                    0,
+                )
+                return "ok"
+
             # Konversation starten – pro User persistente History weiterverwenden
             self._current_session_id = session_id
             _history_key = _hist_key(username, session_id)
@@ -2165,7 +2186,6 @@ KRITISCH – Autonomie-Regeln:
                         _tool_stopped = True
                         break
                     result_str = str(result)[:5000]
-
                     # Screenshot-Bild erkennen (IMAGE_BASE64:pfad|base64data)
                     image_part = None
                     if isinstance(result, str) and result.startswith("IMAGE_BASE64:"):
@@ -2215,11 +2235,15 @@ KRITISCH – Autonomie-Regeln:
                     await self._deliver_docs(ws, result_str, _delivered_docs, username, since=_task_start_time)
 
                     _conv_messages.append({"role": "tool", "tool": tool_name, "content": result_str})
+                    context_result_str = _compact_tool_result(
+                        result_str,
+                        bool((self._eff_profile or {}).get("economy_mode")),
+                    )
 
                     function_response_parts.append(
                         types.Part.from_function_response(
                             name=tool_name,
-                            response={"result": result_str},
+                            response={"result": context_result_str},
                         )
                     )
                     # Bild als separaten Inline-Part anfügen (Gemini Multimodal)
@@ -2637,6 +2661,20 @@ KRITISCH – Autonomie-Regeln:
         collected_texts = []
 
         try:
+            try:
+                from backend.ai.deterministic import answer as _deterministic_answer
+                import sys as _sys
+                _main_mod = _sys.modules.get("backend.main")
+                _det = await _deterministic_answer(
+                    task_text,
+                    agent_manager=getattr(_main_mod, "agent_manager", None),
+                )
+            except Exception:
+                _det = None
+            if _det:
+                collected_texts.append(_det)
+                return _det
+
             chat_history = []
 
             # _await_or_stop wie in run_task: ohne die Umhuellung waere ein

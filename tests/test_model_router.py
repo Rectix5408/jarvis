@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
+import importlib
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace as NS
@@ -13,6 +14,10 @@ stub.config = NS(MODEL_ROUTING_MODE="cloud", LOCAL_MODEL="qwen3:4b",
                  LLM_MAX_TOKENS=8192, LLM_REASONING_EFFORT="", LLM_TIMEOUT=180)
 sys.modules["backend.config"] = stub
 from backend import llm
+
+
+def active_config():
+    return importlib.import_module("backend.config").config
 
 
 class Provider:
@@ -34,8 +39,9 @@ class Provider:
 
 class RouterTests(unittest.IsolatedAsyncioTestCase):
     async def call(self, mode, *, tools=None, text="short", local_error=None, primary_name="anthropic", primary_url=""):
-        stub.config.MODEL_ROUTING_MODE = mode
-        stub.config.LOCAL_MODEL = "qwen3:4b"
+        cfg = active_config()
+        cfg.MODEL_ROUTING_MODE = mode
+        cfg.LOCAL_MODEL = "qwen3:4b"
         cloud, local = Provider(), Provider(error=local_error)
         router = llm.ModelRouterProvider(cloud, primary_name, primary_url)
         contents = [NS(parts=[NS(text=text, inline_data=None)])]
@@ -53,11 +59,12 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
             await self.call("local_only", local_error=RuntimeError("offline"))
 
     async def test_local_only_without_model_fails_closed(self):
-        stub.config.MODEL_ROUTING_MODE = "local_only"
-        stub.config.LOCAL_MODEL = ""
+        cfg = active_config()
+        cfg.MODEL_ROUTING_MODE = "local_only"
+        cfg.LOCAL_MODEL = ""
         cloud = Provider()
         router = llm.ModelRouterProvider(cloud, "anthropic")
-        with self.assertRaisesRegex(RuntimeError, "kein lokales Modell"):
+        with self.assertRaisesRegex(RuntimeError, "Lokales Modell"):
             await router.generate_response("cloud", "system", [], [])
         self.assertEqual(cloud.calls, [])
 
@@ -74,10 +81,24 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_smart_routes_tools_and_large_context_to_primary(self):
         response, cloud, local = await self.call("smart", tools=[{"name": "read"}])
+        self.assertEqual(response.usage["route"], "local")
+        self.assertEqual(cloud.calls, [])
+        response, cloud, local = await self.call(
+            "smart",
+            tools=[{"name": "read"}],
+            text="Plane eine komplexe mehrstufige Architekturstrategie mit Agenten und Tools.",
+        )
         self.assertEqual(response.usage["route"], "cloud")
         self.assertEqual(local.calls, [])
         response, cloud, local = await self.call("smart", text="x" * 6001)
         self.assertEqual(response.usage["route"], "cloud")
+        self.assertEqual(local.calls, [])
+
+    async def test_deterministic_status_uses_no_model(self):
+        response, cloud, local = await self.call("cloud", text="Wie viel RAM ist frei?")
+        self.assertEqual(response.usage["route"], "deterministic")
+        self.assertEqual(response.usage["input_tokens"], 0)
+        self.assertEqual(cloud.calls, [])
         self.assertEqual(local.calls, [])
 
     async def test_cloud_mode_preserves_local_primary_attribution(self):
@@ -87,14 +108,14 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(local.calls, [])
 
     async def test_local_only_blocks_cloud_image(self):
-        stub.config.MODEL_ROUTING_MODE = "local_only"
+        active_config().MODEL_ROUTING_MODE = "local_only"
         primary = Provider()
         with self.assertRaises(llm.ImageGenNotSupported):
             await llm.ModelRouterProvider(primary, "google").generate_image("imagen", "prompt")
         self.assertEqual(primary.calls, [])
 
     async def test_cost_budget_fails_closed_without_rates(self):
-        stub.config.MODEL_ROUTING_MODE = "cloud"
+        active_config().MODEL_ROUTING_MODE = "cloud"
         router = llm.ModelRouterProvider(Provider(), "anthropic")
         router.cost_budget = 1
         with patch.dict("os.environ", {
@@ -104,7 +125,7 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
                 await router.generate_response("cloud", "system", [], [])
 
     async def test_cost_budget_reserves_output_and_tracks_actual_cost(self):
-        stub.config.MODEL_ROUTING_MODE = "cloud"
+        active_config().MODEL_ROUTING_MODE = "cloud"
         primary = Provider(llm.LLMResponse([llm.LLMPart(text="OK")], None,
                                            {"input_tokens": 100, "output_tokens": 50}))
         router = llm.ModelRouterProvider(primary, "anthropic")

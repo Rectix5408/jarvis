@@ -1,5 +1,6 @@
 """Economy mode regression tests; no live settings or external requests."""
 import ast
+import importlib
 import json
 from pathlib import Path
 import sys
@@ -25,6 +26,12 @@ def method(path, owner, name, namespace):
 
 
 class EconomyTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        cfg = importlib.import_module("backend.config").config
+        cfg.MODEL_ROUTING_MODE = "cloud"
+        cfg.LOCAL_MODEL = "qwen3:4b"
+        cfg.LLM_MAX_TOKENS = 8192
+
     async def test_original_role_prompt_remains(self):
         prompt = method("backend/agent.py", "JarvisAgent", "_base_system_prompt", {})
         agent = NS(_role_prompt="Original security and role rules", _zeit_hinweis=lambda: " time",
@@ -48,7 +55,8 @@ class EconomyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(args.kwargs["json"]["max_tokens"], 2048)
                 self.assertNotIn("Authorization", args.kwargs["headers"])
             self.assertEqual(client.post.await_count, 2)
-        with patch.object(stub.config, "LLM_MAX_TOKENS", 1024):
+        active_config = importlib.import_module("backend.config").config
+        with patch.object(active_config, "LLM_MAX_TOKENS", 1024):
             self.assertEqual(llm._llm_max_tokens(True), 1024)
         self.assertEqual(llm._llm_max_tokens(), 8192)
 
@@ -68,6 +76,33 @@ class EconomyTests(unittest.IsolatedAsyncioTestCase):
         provider.client = NS(messages=NS(create=create))
         await provider.generate_response("test", "system", [], [], reasoning_effort="high")
         self.assertLessEqual(create.call_args.kwargs["max_tokens"], 2048)
+
+    async def test_anthropic_tool_use_ids_are_unique_for_repeated_tool_names(self):
+        provider = object.__new__(llm.AnthropicProvider)
+        provider.economy_mode = True
+        create = AsyncMock(return_value=NS(content=[NS(type="text", text="OK")], usage=NS(input_tokens=1, output_tokens=1)))
+        provider.client = NS(messages=NS(create=create))
+        history = [
+            types.Content(role="user", parts=[types.Part.from_text(text="search twice")]),
+            types.Content(role="model", parts=[
+                types.Part(function_call=types.FunctionCall(name="search", args={"q": "a"})),
+                types.Part(function_call=types.FunctionCall(name="search", args={"q": "b"})),
+            ]),
+            types.Content(role="user", parts=[
+                types.Part(function_response=types.FunctionResponse(name="search", response={"result": "A" * 1500})),
+                types.Part(function_response=types.FunctionResponse(name="search", response={"result": "B"})),
+            ]),
+        ]
+        await provider.generate_response("test", "system", history, [])
+        messages = create.call_args.kwargs["messages"]
+        tool_uses = [b for b in messages[1]["content"] if b["type"] == "tool_use"]
+        tool_results = [b for b in messages[2]["content"] if b["type"] == "tool_result"]
+        ids = [b["id"] for b in tool_uses]
+        self.assertEqual(len(ids), 2)
+        self.assertEqual(len(set(ids)), 2)
+        self.assertEqual([b["tool_use_id"] for b in tool_results], ids)
+        self.assertLess(len(tool_results[0]["content"]), 1400)
+        self.assertIn("gekuerzt", tool_results[0]["content"])
 
     async def test_compression_preserves_tool_turns_and_failure_history(self):
         compress = method("backend/agent.py", "JarvisAgent", "_compress_history", {"json": json, "types": types})

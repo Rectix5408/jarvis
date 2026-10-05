@@ -275,6 +275,27 @@ def _llm_max_tokens(economy_mode: bool = False) -> int:
         return 2048 if economy_mode else 8192
 
 
+def _tool_result_context_limit(economy_mode: bool = False) -> int:
+    """Maximale Tool-Ergebnislaenge, die erneut an ein LLM geschickt wird.
+
+    Die eigentliche Tool-Ausgabe bleibt im UI/Log erhalten; diese Grenze betrifft
+    nur den Folge-Prompt. Genau dort entstehen die groessten Token-Kosten.
+    """
+    return 1200 if economy_mode else 5000
+
+
+def _compact_tool_result(value: object, economy_mode: bool = False) -> str:
+    text = str(value or "")
+    limit = _tool_result_context_limit(economy_mode)
+    if len(text) <= limit:
+        return text
+    return (
+        text[:limit]
+        + f"\n\n[Jarvis: Tool-Ergebnis fuer den LLM-Kontext gekuerzt, "
+          f"{len(text) - limit} Zeichen ausgelassen.]"
+    )
+
+
 # Profil-Sonderwert UND Standard: Parameter gar nicht senden, der Anbieter
 # entscheidet. Bis 2026-07-27 war stattdessen 0.2 an vier Stellen hart codiert;
 # seither ist "auto" der Standard, damit aktuelle Claude-Modelle nicht in den
@@ -1324,15 +1345,15 @@ class AnthropicProvider(LLMProvider):
 
             if fn_responses:
                 tool_result_blocks = []
-                for fr in fn_responses:
+                for result_index, fr in enumerate(fn_responses):
                     ids = tool_id_queues.get(fr.name, deque())
-                    tool_id = ids.popleft() if ids else f"call_{fr.name}_unknown"
+                    tool_id = ids.popleft() if ids else f"call_{fr.name}_orphan_{step}_{result_index}"
                     resp_data = fr.response if isinstance(fr.response, dict) else {"result": str(fr.response)}
                     result_str = resp_data.get("result", json.dumps(resp_data, ensure_ascii=False))
                     tool_result_blocks.append({
                         "type": "tool_result",
                         "tool_use_id": tool_id,
-                        "content": str(result_str),
+                        "content": _compact_tool_result(result_str, getattr(self, "economy_mode", False)),
                     })
                 messages.append({"role": "user", "content": tool_result_blocks})
 
@@ -1340,8 +1361,8 @@ class AnthropicProvider(LLMProvider):
                 content_blocks = []
                 if text_parts:
                     content_blocks.append({"type": "text", "text": "\n".join(text_parts)})
-                for fc in fn_calls:
-                    tool_id = f"call_{fc.name}_{step}"
+                for call_index, fc in enumerate(fn_calls):
+                    tool_id = f"call_{fc.name}_{step}_{call_index}"
                     tool_id_queues[fc.name].append(tool_id)
                     args = dict(fc.args) if fc.args else {}
                     content_blocks.append({
@@ -1861,29 +1882,73 @@ class ModelRouterProvider(LLMProvider):
                                 temperature=None) -> LLMResponse:
         if self.token_budget and self.total_input_tokens + self.total_output_tokens >= self.token_budget:
             raise RuntimeError(f"Tokenbudget erreicht ({self.token_budget})")
+        from backend.ai.policy import ExecutionRoute
+        from backend.ai.router import decide
+        from backend.ai.usage import usage_tracker
         mode, local_model = self._policy()
         text_size, has_media = _routing_text_size(contents)
-        use_local = mode in {"local_only", "local_first"} or (
-            mode == "smart" and not has_media and not tools and text_size <= 6000)
-        if use_local:
-            if not local_model:
+        decision = decide(
+            mode=mode,
+            local_model=local_model,
+            primary_route=self.primary_route,
+            contents=contents,
+            tools=tools,
+        )
+        if decision.route == ExecutionRoute.DETERMINISTIC:
+            response = LLMResponse(
+                [LLMPart(text=(
+                    "Diese Anfrage ist deterministisch erkannt worden und sollte direkt "
+                    "ueber ein Jarvis-Tool/API beantwortet werden. Falls du sie im Chat "
+                    "gestellt hast, formuliere sie als konkrete Aktion oder nutze den "
+                    "passenden Bereich im Interface."
+                ))],
+                None,
+                {"input_tokens": 0, "output_tokens": 0},
+            )
+            response.usage.update({
+                "route": "deterministic",
+                "model": "",
+                "task_type": decision.task_type.value,
+                "complexity": decision.complexity,
+                "router_reason": decision.reason,
+            })
+            usage_tracker.record("deterministic", response.usage)
+            self.last_route, self.last_model = "deterministic", ""
+            return response
+        if decision.route == ExecutionRoute.BLOCKED:
+            raise RuntimeError(f"LOCAL ONLY: {decision.reason}")
+        if decision.route == ExecutionRoute.LOCAL:
+            try:
+                response = await self._local().generate_response(
+                    decision.model or local_model, system_prompt, contents, tools,
+                    reasoning_effort=reasoning_effort, temperature=temperature)
+                response = self._tag(response, "local", decision.model or local_model)
+                response.usage.update({
+                    "task_type": decision.task_type.value,
+                    "complexity": decision.complexity,
+                    "router_reason": decision.reason,
+                    "tier": decision.tier,
+                })
+                usage_tracker.record("local", response.usage)
+                return response
+            except Exception:
                 if mode == "local_only":
-                    raise RuntimeError("LOCAL ONLY ist aktiv, aber kein lokales Modell ist ausgewaehlt")
-            else:
-                try:
-                    response = await self._local().generate_response(
-                        local_model, system_prompt, contents, tools,
-                        reasoning_effort=reasoning_effort, temperature=temperature)
-                    return self._tag(response, "local", local_model)
-                except Exception:
-                    if mode == "local_only":
-                        raise
+                    raise
+                if mode == "smart" and not decision.cloud_allowed:
+                    raise
         if self.primary_route == "cloud":
             self._authorize_cloud_cost(text_size)
         response = await self.primary.generate_response(
             model, system_prompt, contents, tools,
             reasoning_effort=reasoning_effort, temperature=temperature)
-        return self._tag(response, self.primary_route, model)
+        response = self._tag(response, self.primary_route, model)
+        response.usage.update({
+            "task_type": decision.task_type.value,
+            "complexity": decision.complexity,
+            "router_reason": decision.reason,
+        })
+        usage_tracker.record(self.primary_route, response.usage)
+        return response
 
     async def generate_image(self, model: str, prompt: str) -> bytes:
         mode, _ = self._policy()

@@ -214,6 +214,8 @@ class Config:
     if MODEL_ROUTING_MODE not in {"local_only", "local_first", "smart", "cloud"}:
         MODEL_ROUTING_MODE = "cloud"
     LOCAL_MODEL: str = os.getenv("JARVIS_LOCAL_MODEL", "")
+    SMART_LOCAL_COMPLEXITY_LIMIT: float = float(os.getenv("JARVIS_SMART_LOCAL_COMPLEXITY_LIMIT", "0.86"))
+    SMART_TOOL_CLOUD_COMPLEXITY: float = float(os.getenv("JARVIS_SMART_TOOL_CLOUD_COMPLEXITY", "0.55"))
     # Obergrenze fuer die Antwortlaenge OpenAI-kompatibler Aufrufe (256..131072).
     # Wird von llm.py::_llm_max_tokens() gelesen. Bis 2026-07-27 existierte das
     # Feld NICHT – der getattr-Default 8192 galt immer, obwohl der Docstring
@@ -339,6 +341,12 @@ class Config:
         self.MODEL_ROUTING_MODE = mode if mode in {"local_only", "local_first", "smart", "cloud"} else "cloud"
         self.LOCAL_MODEL = _clean_profile_str(data.get("local_model", self.LOCAL_MODEL))
         try:
+            self.SMART_LOCAL_COMPLEXITY_LIMIT = max(0.05, min(float(data.get("smart_local_complexity_limit", self.SMART_LOCAL_COMPLEXITY_LIMIT)), 1.0))
+            self.SMART_TOOL_CLOUD_COMPLEXITY = max(0.05, min(float(data.get("smart_tool_cloud_complexity", self.SMART_TOOL_CLOUD_COMPLEXITY)), 1.0))
+        except (TypeError, ValueError):
+            self.SMART_LOCAL_COMPLEXITY_LIMIT = 0.86
+            self.SMART_TOOL_CLOUD_COMPLEXITY = 0.55
+        try:
             self.LLM_MAX_TOKENS = max(256, min(int(data.get("llm_max_tokens") or 8192), 131072))
         except (TypeError, ValueError):
             self.LLM_MAX_TOKENS = 8192
@@ -451,6 +459,8 @@ class Config:
             "llm_reasoning_effort": self.LLM_REASONING_EFFORT,
             "model_routing_mode": self.MODEL_ROUTING_MODE,
             "local_model": self.LOCAL_MODEL,
+            "smart_local_complexity_limit": self.SMART_LOCAL_COMPLEXITY_LIMIT,
+            "smart_tool_cloud_complexity": self.SMART_TOOL_CLOUD_COMPLEXITY,
             "llm_max_tokens": self.LLM_MAX_TOKENS,
             "docs_retention_days": self.DOCS_RETENTION_DAYS,
             "agent_api_key": self.AGENT_API_KEY,
@@ -483,6 +493,16 @@ class Config:
                 self.MODEL_ROUTING_MODE = mode
         if "local_model" in settings:
             self.LOCAL_MODEL = _clean_profile_str(settings["local_model"])
+        if "smart_local_complexity_limit" in settings:
+            try:
+                self.SMART_LOCAL_COMPLEXITY_LIMIT = max(0.05, min(float(settings["smart_local_complexity_limit"]), 1.0))
+            except (TypeError, ValueError):
+                pass
+        if "smart_tool_cloud_complexity" in settings:
+            try:
+                self.SMART_TOOL_CLOUD_COMPLEXITY = max(0.05, min(float(settings["smart_tool_cloud_complexity"]), 1.0))
+            except (TypeError, ValueError):
+                pass
         if "llm_max_tokens" in settings:
             try:
                 self.LLM_MAX_TOKENS = max(256, min(int(settings["llm_max_tokens"]), 131072))

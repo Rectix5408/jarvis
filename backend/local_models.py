@@ -17,9 +17,36 @@ import psutil
 
 
 # Download size is an estimate from the publisher, not a RAM/VRAM requirement.
-CATALOG = [{"name": "qwen3:4b", "description": "Qwen 3, 4B, Q4_K_M",
-            "size_estimate": 2_500_000_000, "license": "Apache-2.0",
-            "source": "https://ollama.com/library/qwen3:4b", "verified": "2026-10-05"}]
+CATALOG = [
+    {"name": "qwen3:4b", "description": "Qwen 3, 4B, guter Local-General-Default",
+     "size_estimate": 2_500_000_000, "estimated_ram": 5_000_000_000,
+     "context": 8192, "tier": "local_general",
+     "capabilities": ["chat", "tools", "structured_output", "code", "reasoning"],
+     "recommended_usage": ["chat", "tool_selection", "writing", "small_code"],
+     "license": "Apache-2.0", "source": "https://ollama.com/library/qwen3:4b",
+     "verified": "2026-10-05"},
+    {"name": "qwen3:1.7b", "description": "Sehr schnelles kleines Modell fuer Klassifikation und einfache Antworten",
+     "size_estimate": 1_200_000_000, "estimated_ram": 3_000_000_000,
+     "context": 8192, "tier": "local_fast",
+     "capabilities": ["chat", "classification", "extraction"],
+     "recommended_usage": ["classification", "short_chat", "routing_assist"],
+     "license": "Apache-2.0", "source": "https://ollama.com/library/qwen3:1.7b",
+     "verified": "2026-10-05"},
+    {"name": "llama3.2:3b", "description": "Kompaktes Alltagsmodell fuer schnelle lokale Chats",
+     "size_estimate": 2_100_000_000, "estimated_ram": 4_500_000_000,
+     "context": 8192, "tier": "local_fast",
+     "capabilities": ["chat", "tools", "structured_output"],
+     "recommended_usage": ["short_chat", "tool_selection", "summaries"],
+     "license": "Llama 3.2 Community License", "source": "https://ollama.com/library/llama3.2:3b",
+     "verified": "2026-10-05"},
+    {"name": "qwen3:14b", "description": "Staerkeres lokales Modell fuer Code und mehrstufiges Reasoning",
+     "size_estimate": 9_300_000_000, "estimated_ram": 18_000_000_000,
+     "context": 8192, "tier": "local_strong",
+     "capabilities": ["chat", "tools", "structured_output", "code", "reasoning"],
+     "recommended_usage": ["code", "reasoning", "agent_tasks"],
+     "license": "Apache-2.0", "source": "https://ollama.com/library/qwen3:14b",
+     "verified": "2026-10-05"},
+]
 ACTIVE = ("QUEUED", "DOWNLOADING", "VERIFYING", "TESTING")
 
 
@@ -107,6 +134,30 @@ class LocalModels:
                 "ram_total": memory.total, "ram_available": memory.available,
                 "disk": disk, "gpu": None, "scope": "jarvis_host",
                 "disk_error": None if disk else "Modell-Volume nicht messbar; JARVIS_MODEL_DISK_PATH konfigurieren"}
+
+    def catalog(self):
+        hw = self.hardware()
+        disk_free = ((hw.get("disk") or {}).get("free") if isinstance(hw.get("disk"), dict) else None)
+        ram_available = int(hw.get("ram_available") or 0)
+        items = []
+        for item in CATALOG:
+            state = "supported"
+            reasons = []
+            size = int(item.get("size_estimate") or 0)
+            ram = int(item.get("estimated_ram") or 0)
+            if disk_free is not None and disk_free < size + 1_000_000_000:
+                state = "not_recommended"
+                reasons.append("Zu wenig freier Modell-Speicher")
+            if ram and ram_available and ram_available < ram:
+                state = "high_load" if state != "not_recommended" else state
+                reasons.append("Voraussichtlich hohe RAM-Last")
+            if state == "supported" and item.get("tier") in {"local_fast", "local_general"}:
+                state = "recommended"
+            enriched = dict(item)
+            enriched["hardware_state"] = state
+            enriched["hardware_reasons"] = reasons
+            items.append(enriched)
+        return items
 
     async def status(self):
         hardware = self.hardware()
@@ -243,7 +294,7 @@ def make_router(service, require_admin, config):
 
     @router.get("/catalog")
     async def catalog():
-        return CATALOG
+        return service.catalog()
 
     @router.get("/downloads")
     async def downloads():
@@ -252,11 +303,15 @@ def make_router(service, require_admin, config):
     @router.get("/routing")
     async def routing():
         return {"mode": config.MODEL_ROUTING_MODE, "local_model": config.LOCAL_MODEL,
+                "smart_local_complexity_limit": getattr(config, "SMART_LOCAL_COMPLEXITY_LIMIT", 0.86),
+                "smart_tool_cloud_complexity": getattr(config, "SMART_TOOL_CLOUD_COMPLEXITY", 0.55),
                 "modes": ["local_only", "local_first", "smart", "cloud"]}
 
     class RoutingRequest(BaseModel):
         mode: str = Field(min_length=5, max_length=20)
         local_model: str = Field(default="", max_length=160)
+        smart_local_complexity_limit: float | None = None
+        smart_tool_cloud_complexity: float | None = None
 
     @router.post("/routing")
     async def set_routing(body: RoutingRequest, user=Depends(require_admin)):
@@ -268,9 +323,16 @@ def make_router(service, require_admin, config):
             if not selected:
                 raise HTTPException(409, "Zuerst ein lokales Modell auswaehlen")
             await guarded(service.details(selected))
-        config.save_global_settings({"model_routing_mode": mode, "local_model": selected})
+        settings = {"model_routing_mode": mode, "local_model": selected}
+        if body.smart_local_complexity_limit is not None:
+            settings["smart_local_complexity_limit"] = max(0.05, min(float(body.smart_local_complexity_limit), 1.0))
+        if body.smart_tool_cloud_complexity is not None:
+            settings["smart_tool_cloud_complexity"] = max(0.05, min(float(body.smart_tool_cloud_complexity), 1.0))
+        config.save_global_settings(settings)
         service.audit(user, "model_routing_changed", selected or mode)
-        return {"success": True, "mode": config.MODEL_ROUTING_MODE, "local_model": config.LOCAL_MODEL}
+        return {"success": True, "mode": config.MODEL_ROUTING_MODE, "local_model": config.LOCAL_MODEL,
+                "smart_local_complexity_limit": getattr(config, "SMART_LOCAL_COMPLEXITY_LIMIT", 0.86),
+                "smart_tool_cloud_complexity": getattr(config, "SMART_TOOL_CLOUD_COMPLEXITY", 0.55)}
 
     @router.post("/details")
     async def details(body: ModelRequest):
