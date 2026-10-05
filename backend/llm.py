@@ -4,6 +4,7 @@ import asyncio
 import contextvars
 import json
 import re
+import time
 import httpx
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
@@ -1832,7 +1833,13 @@ class ModelRouterProvider(LLMProvider):
     def _policy():
         from backend.config import config
         mode = getattr(config, "MODEL_ROUTING_MODE", "cloud")
-        return mode if mode in {"local_only", "local_first", "smart", "cloud"} else "cloud", getattr(config, "LOCAL_MODEL", "")
+        fallback = getattr(config, "LOCAL_MODEL", "")
+        models = {
+            "local_fast": getattr(config, "LOCAL_FAST_MODEL", ""),
+            "local_general": getattr(config, "LOCAL_GENERAL_MODEL", "") or fallback,
+            "local_strong": getattr(config, "LOCAL_STRONG_MODEL", ""),
+        }
+        return mode if mode in {"local_only", "local_first", "smart", "cloud"} else "cloud", models
 
     @staticmethod
     def _local():
@@ -1867,15 +1874,27 @@ class ModelRouterProvider(LLMProvider):
             raise RuntimeError("Ungueltige Cloud-Kostenkonfiguration") from error
 
     def _authorize_cloud_cost(self, text_size):
-        if not self.cost_budget:
+        from backend.ai.usage import usage_tracker
+        from backend.config import config
+        daily_token_budget = max(0, int(getattr(config, "DAILY_CLOUD_TOKEN_BUDGET", 0) or 0))
+        monthly_cost_budget = max(0.0, float(getattr(config, "MONTHLY_CLOUD_COST_BUDGET", 0) or 0))
+        estimated_input = max(1, text_size // 4)
+        daily_tokens, _ = usage_tracker.cloud_totals("today")
+        if daily_token_budget and daily_tokens + estimated_input > daily_token_budget:
+            raise RuntimeError(f"Taegliches Cloud-Tokenbudget erreicht ({daily_token_budget})")
+        if not self.cost_budget and not monthly_cost_budget:
             return
         input_rate, output_rate, output_reserve = self._cloud_rates()
         if input_rate <= 0 or output_rate <= 0:
             raise RuntimeError("Kostenbudget kann ohne Cloud-Preisraten nicht sicher erzwungen werden")
         conservative = ((max(1, text_size // 4) * input_rate)
                         + (output_reserve * output_rate)) / 1_000_000
-        if self.total_cost + conservative > self.cost_budget:
+        if self.cost_budget and self.total_cost + conservative > self.cost_budget:
             raise RuntimeError(f"Kostenbudget erreicht ({self.cost_budget:.4f})")
+        if monthly_cost_budget:
+            _, monthly_cost = usage_tracker.cloud_totals("month")
+            if monthly_cost + conservative > monthly_cost_budget:
+                raise RuntimeError(f"Monatliches Cloud-Kostenbudget erreicht ({monthly_cost_budget:.4f})")
 
     async def generate_response(self, model: str, system_prompt: str, contents: list,
                                 tools: list = None, reasoning_effort: str | None = None,
@@ -1885,11 +1904,12 @@ class ModelRouterProvider(LLMProvider):
         from backend.ai.policy import ExecutionRoute
         from backend.ai.router import decide
         from backend.ai.usage import usage_tracker
-        mode, local_model = self._policy()
+        mode, local_models = self._policy()
+        request_started = time.monotonic()
         text_size, has_media = _routing_text_size(contents)
         decision = decide(
             mode=mode,
-            local_model=local_model,
+            local_model=local_models,
             primary_route=self.primary_route,
             contents=contents,
             tools=tools,
@@ -1912,7 +1932,8 @@ class ModelRouterProvider(LLMProvider):
                 "complexity": decision.complexity,
                 "router_reason": decision.reason,
             })
-            usage_tracker.record("deterministic", response.usage)
+            response.usage["latency_ms"] = round((time.monotonic() - request_started) * 1000)
+            usage_tracker.record("deterministic", response.usage, reason=decision.reason)
             self.last_route, self.last_model = "deterministic", ""
             return response
         if decision.route == ExecutionRoute.BLOCKED:
@@ -1920,16 +1941,17 @@ class ModelRouterProvider(LLMProvider):
         if decision.route == ExecutionRoute.LOCAL:
             try:
                 response = await self._local().generate_response(
-                    decision.model or local_model, system_prompt, contents, tools,
+                    decision.model, system_prompt, contents, tools,
                     reasoning_effort=reasoning_effort, temperature=temperature)
-                response = self._tag(response, "local", decision.model or local_model)
+                response = self._tag(response, "local", decision.model)
                 response.usage.update({
                     "task_type": decision.task_type.value,
                     "complexity": decision.complexity,
                     "router_reason": decision.reason,
                     "tier": decision.tier,
                 })
-                usage_tracker.record("local", response.usage)
+                response.usage["latency_ms"] = round((time.monotonic() - request_started) * 1000)
+                usage_tracker.record("local", response.usage, reason=decision.reason, tier=decision.tier)
                 return response
             except Exception:
                 if mode == "local_only":
@@ -1946,8 +1968,11 @@ class ModelRouterProvider(LLMProvider):
             "task_type": decision.task_type.value,
             "complexity": decision.complexity,
             "router_reason": decision.reason,
+            "provider": self.primary_name,
+            "fallback": decision.route == ExecutionRoute.LOCAL,
+            "latency_ms": round((time.monotonic() - request_started) * 1000),
         })
-        usage_tracker.record(self.primary_route, response.usage)
+        usage_tracker.record(self.primary_route, response.usage, reason=decision.reason)
         return response
 
     async def generate_image(self, model: str, prompt: str) -> bytes:

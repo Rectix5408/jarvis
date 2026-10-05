@@ -303,15 +303,30 @@ def make_router(service, require_admin, config):
     @router.get("/routing")
     async def routing():
         return {"mode": config.MODEL_ROUTING_MODE, "local_model": config.LOCAL_MODEL,
+                "local_fast_model": getattr(config, "LOCAL_FAST_MODEL", ""),
+                "local_general_model": getattr(config, "LOCAL_GENERAL_MODEL", "") or config.LOCAL_MODEL,
+                "local_strong_model": getattr(config, "LOCAL_STRONG_MODEL", ""),
                 "smart_local_complexity_limit": getattr(config, "SMART_LOCAL_COMPLEXITY_LIMIT", 0.86),
                 "smart_tool_cloud_complexity": getattr(config, "SMART_TOOL_CLOUD_COMPLEXITY", 0.55),
+                "daily_cloud_token_budget": getattr(config, "DAILY_CLOUD_TOKEN_BUDGET", 0),
+                "monthly_cloud_cost_budget": getattr(config, "MONTHLY_CLOUD_COST_BUDGET", 0),
                 "modes": ["local_only", "local_first", "smart", "cloud"]}
+
+    @router.get("/usage")
+    async def usage():
+        from backend.ai.usage import usage_tracker
+        return {"today": usage_tracker.snapshot("today"), "month": usage_tracker.snapshot("month")}
 
     class RoutingRequest(BaseModel):
         mode: str = Field(min_length=5, max_length=20)
         local_model: str = Field(default="", max_length=160)
+        local_fast_model: str = Field(default="", max_length=160)
+        local_general_model: str = Field(default="", max_length=160)
+        local_strong_model: str = Field(default="", max_length=160)
         smart_local_complexity_limit: float | None = None
         smart_tool_cloud_complexity: float | None = None
+        daily_cloud_token_budget: int | None = Field(default=None, ge=0, le=1_000_000_000)
+        monthly_cloud_cost_budget: float | None = Field(default=None, ge=0, le=1_000_000)
 
     @router.post("/routing")
     async def set_routing(body: RoutingRequest, user=Depends(require_admin)):
@@ -319,20 +334,36 @@ def make_router(service, require_admin, config):
         if mode not in {"local_only", "local_first", "smart", "cloud"}:
             raise HTTPException(400, "Unbekannter Routing-Modus")
         selected = model_name(body.local_model) if body.local_model else config.LOCAL_MODEL
+        tier_models = {
+            "local_fast_model": model_name(body.local_fast_model) if body.local_fast_model else "",
+            "local_general_model": model_name(body.local_general_model) if body.local_general_model else selected,
+            "local_strong_model": model_name(body.local_strong_model) if body.local_strong_model else "",
+        }
         if mode != "cloud":
-            if not selected:
+            if not any(tier_models.values()):
                 raise HTTPException(409, "Zuerst ein lokales Modell auswaehlen")
-            await guarded(service.details(selected))
-        settings = {"model_routing_mode": mode, "local_model": selected}
+            for candidate in set(filter(None, tier_models.values())):
+                await guarded(service.details(candidate))
+        settings = {"model_routing_mode": mode, "local_model": tier_models["local_general_model"] or selected,
+                    **tier_models}
         if body.smart_local_complexity_limit is not None:
             settings["smart_local_complexity_limit"] = max(0.05, min(float(body.smart_local_complexity_limit), 1.0))
         if body.smart_tool_cloud_complexity is not None:
             settings["smart_tool_cloud_complexity"] = max(0.05, min(float(body.smart_tool_cloud_complexity), 1.0))
+        if body.daily_cloud_token_budget is not None:
+            settings["daily_cloud_token_budget"] = body.daily_cloud_token_budget
+        if body.monthly_cloud_cost_budget is not None:
+            settings["monthly_cloud_cost_budget"] = body.monthly_cloud_cost_budget
         config.save_global_settings(settings)
         service.audit(user, "model_routing_changed", selected or mode)
         return {"success": True, "mode": config.MODEL_ROUTING_MODE, "local_model": config.LOCAL_MODEL,
+                "local_fast_model": getattr(config, "LOCAL_FAST_MODEL", ""),
+                "local_general_model": getattr(config, "LOCAL_GENERAL_MODEL", "") or config.LOCAL_MODEL,
+                "local_strong_model": getattr(config, "LOCAL_STRONG_MODEL", ""),
                 "smart_local_complexity_limit": getattr(config, "SMART_LOCAL_COMPLEXITY_LIMIT", 0.86),
-                "smart_tool_cloud_complexity": getattr(config, "SMART_TOOL_CLOUD_COMPLEXITY", 0.55)}
+                "smart_tool_cloud_complexity": getattr(config, "SMART_TOOL_CLOUD_COMPLEXITY", 0.55),
+                "daily_cloud_token_budget": getattr(config, "DAILY_CLOUD_TOKEN_BUDGET", 0),
+                "monthly_cloud_cost_budget": getattr(config, "MONTHLY_CLOUD_COST_BUDGET", 0)}
 
     @router.post("/details")
     async def details(body: ModelRequest):
@@ -350,13 +381,16 @@ def make_router(service, require_admin, config):
     async def activate(body: ModelRequest, user=Depends(require_admin)):
         async with service.lock:
             await guarded(service.test(body.model))
-            config.save_global_settings({"local_model": body.model})
+            config.save_global_settings({"local_model": body.model, "local_general_model": body.model})
             service.audit(user, "model_activated", body.model)
             return {"success": True, "local_model": body.model, "scope": "model_router"}
 
     @router.post("/delete")
     async def delete(body: ModelRequest, user=Depends(require_admin)):
-        await guarded(service.delete(body.model, user, lambda name: config.LOCAL_MODEL == name or any(p.get("model") == name for p in config.profiles)))
+        await guarded(service.delete(body.model, user, lambda name: name in {
+            config.LOCAL_MODEL, getattr(config, "LOCAL_FAST_MODEL", ""),
+            getattr(config, "LOCAL_GENERAL_MODEL", ""), getattr(config, "LOCAL_STRONG_MODEL", "")
+        } or any(p.get("model") == name for p in config.profiles)))
         return {"success": True}
 
     return router

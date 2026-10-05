@@ -38,6 +38,17 @@ class Provider:
 
 
 class RouterTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        cfg = active_config()
+        cfg.DAILY_CLOUD_TOKEN_BUDGET = 0
+        cfg.MONTHLY_CLOUD_COST_BUDGET = 0
+        self.usage_record = patch("backend.ai.usage.usage_tracker.record")
+        self.usage_totals = patch("backend.ai.usage.usage_tracker.cloud_totals", return_value=(0, 0.0))
+        self.usage_record.start()
+        self.usage_totals.start()
+        self.addCleanup(self.usage_record.stop)
+        self.addCleanup(self.usage_totals.stop)
+
     async def call(self, mode, *, tools=None, text="short", local_error=None, primary_name="anthropic", primary_url=""):
         cfg = active_config()
         cfg.MODEL_ROUTING_MODE = mode
@@ -143,6 +154,18 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict("os.environ", rates):
             with self.assertRaisesRegex(RuntimeError, "Kostenbudget"):
                 await blocked.generate_response("cloud", "system", [], [])
+
+    async def test_daily_cloud_token_budget_blocks_before_provider(self):
+        cfg = active_config()
+        cfg.MODEL_ROUTING_MODE = "cloud"
+        cfg.DAILY_CLOUD_TOKEN_BUDGET = 10
+        primary = Provider()
+        router = llm.ModelRouterProvider(primary, "anthropic")
+        with patch("backend.ai.usage.usage_tracker.cloud_totals", return_value=(10, 0.0)):
+            with self.assertRaisesRegex(RuntimeError, "Taegliches Cloud-Tokenbudget"):
+                await router.generate_response("cloud", "system", [NS(parts=[NS(text="hello", inline_data=None)])], [])
+        self.assertEqual(primary.calls, [])
+        cfg.DAILY_CLOUD_TOKEN_BUDGET = 0
 
 
 if __name__ == "__main__":

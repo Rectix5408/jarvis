@@ -18,7 +18,7 @@ def _mode(value: str) -> RoutingMode:
 def decide(
     *,
     mode: str,
-    local_model: str,
+    local_model: str | dict[str, str],
     primary_route: str,
     contents: list,
     tools: list | None,

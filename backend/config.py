@@ -214,8 +214,13 @@ class Config:
     if MODEL_ROUTING_MODE not in {"local_only", "local_first", "smart", "cloud"}:
         MODEL_ROUTING_MODE = "cloud"
     LOCAL_MODEL: str = os.getenv("JARVIS_LOCAL_MODEL", "")
+    LOCAL_FAST_MODEL: str = os.getenv("JARVIS_LOCAL_FAST_MODEL", "")
+    LOCAL_GENERAL_MODEL: str = os.getenv("JARVIS_LOCAL_GENERAL_MODEL", "")
+    LOCAL_STRONG_MODEL: str = os.getenv("JARVIS_LOCAL_STRONG_MODEL", "")
     SMART_LOCAL_COMPLEXITY_LIMIT: float = float(os.getenv("JARVIS_SMART_LOCAL_COMPLEXITY_LIMIT", "0.86"))
     SMART_TOOL_CLOUD_COMPLEXITY: float = float(os.getenv("JARVIS_SMART_TOOL_CLOUD_COMPLEXITY", "0.55"))
+    DAILY_CLOUD_TOKEN_BUDGET: int = int(os.getenv("JARVIS_DAILY_CLOUD_TOKEN_BUDGET", "0"))
+    MONTHLY_CLOUD_COST_BUDGET: float = float(os.getenv("JARVIS_MONTHLY_CLOUD_COST_BUDGET", "0"))
     # Obergrenze fuer die Antwortlaenge OpenAI-kompatibler Aufrufe (256..131072).
     # Wird von llm.py::_llm_max_tokens() gelesen. Bis 2026-07-27 existierte das
     # Feld NICHT – der getattr-Default 8192 galt immer, obwohl der Docstring
@@ -340,12 +345,22 @@ class Config:
         mode = str(data.get("model_routing_mode") or self.MODEL_ROUTING_MODE).lower()
         self.MODEL_ROUTING_MODE = mode if mode in {"local_only", "local_first", "smart", "cloud"} else "cloud"
         self.LOCAL_MODEL = _clean_profile_str(data.get("local_model", self.LOCAL_MODEL))
+        self.LOCAL_FAST_MODEL = _clean_profile_str(data.get("local_fast_model", self.LOCAL_FAST_MODEL))
+        self.LOCAL_GENERAL_MODEL = _clean_profile_str(
+            data.get("local_general_model", self.LOCAL_GENERAL_MODEL or self.LOCAL_MODEL))
+        self.LOCAL_STRONG_MODEL = _clean_profile_str(data.get("local_strong_model", self.LOCAL_STRONG_MODEL))
         try:
             self.SMART_LOCAL_COMPLEXITY_LIMIT = max(0.05, min(float(data.get("smart_local_complexity_limit", self.SMART_LOCAL_COMPLEXITY_LIMIT)), 1.0))
             self.SMART_TOOL_CLOUD_COMPLEXITY = max(0.05, min(float(data.get("smart_tool_cloud_complexity", self.SMART_TOOL_CLOUD_COMPLEXITY)), 1.0))
         except (TypeError, ValueError):
             self.SMART_LOCAL_COMPLEXITY_LIMIT = 0.86
             self.SMART_TOOL_CLOUD_COMPLEXITY = 0.55
+        try:
+            self.DAILY_CLOUD_TOKEN_BUDGET = max(0, int(data.get("daily_cloud_token_budget", self.DAILY_CLOUD_TOKEN_BUDGET)))
+            self.MONTHLY_CLOUD_COST_BUDGET = max(0.0, float(data.get("monthly_cloud_cost_budget", self.MONTHLY_CLOUD_COST_BUDGET)))
+        except (TypeError, ValueError):
+            self.DAILY_CLOUD_TOKEN_BUDGET = 0
+            self.MONTHLY_CLOUD_COST_BUDGET = 0.0
         try:
             self.LLM_MAX_TOKENS = max(256, min(int(data.get("llm_max_tokens") or 8192), 131072))
         except (TypeError, ValueError):
@@ -459,8 +474,13 @@ class Config:
             "llm_reasoning_effort": self.LLM_REASONING_EFFORT,
             "model_routing_mode": self.MODEL_ROUTING_MODE,
             "local_model": self.LOCAL_MODEL,
+            "local_fast_model": self.LOCAL_FAST_MODEL,
+            "local_general_model": self.LOCAL_GENERAL_MODEL,
+            "local_strong_model": self.LOCAL_STRONG_MODEL,
             "smart_local_complexity_limit": self.SMART_LOCAL_COMPLEXITY_LIMIT,
             "smart_tool_cloud_complexity": self.SMART_TOOL_CLOUD_COMPLEXITY,
+            "daily_cloud_token_budget": self.DAILY_CLOUD_TOKEN_BUDGET,
+            "monthly_cloud_cost_budget": self.MONTHLY_CLOUD_COST_BUDGET,
             "llm_max_tokens": self.LLM_MAX_TOKENS,
             "docs_retention_days": self.DOCS_RETENTION_DAYS,
             "agent_api_key": self.AGENT_API_KEY,
@@ -493,6 +513,13 @@ class Config:
                 self.MODEL_ROUTING_MODE = mode
         if "local_model" in settings:
             self.LOCAL_MODEL = _clean_profile_str(settings["local_model"])
+        for setting, attribute in (
+            ("local_fast_model", "LOCAL_FAST_MODEL"),
+            ("local_general_model", "LOCAL_GENERAL_MODEL"),
+            ("local_strong_model", "LOCAL_STRONG_MODEL"),
+        ):
+            if setting in settings:
+                setattr(self, attribute, _clean_profile_str(settings[setting]))
         if "smart_local_complexity_limit" in settings:
             try:
                 self.SMART_LOCAL_COMPLEXITY_LIMIT = max(0.05, min(float(settings["smart_local_complexity_limit"]), 1.0))
@@ -501,6 +528,16 @@ class Config:
         if "smart_tool_cloud_complexity" in settings:
             try:
                 self.SMART_TOOL_CLOUD_COMPLEXITY = max(0.05, min(float(settings["smart_tool_cloud_complexity"]), 1.0))
+            except (TypeError, ValueError):
+                pass
+        if "daily_cloud_token_budget" in settings:
+            try:
+                self.DAILY_CLOUD_TOKEN_BUDGET = max(0, int(settings["daily_cloud_token_budget"]))
+            except (TypeError, ValueError):
+                pass
+        if "monthly_cloud_cost_budget" in settings:
+            try:
+                self.MONTHLY_CLOUD_COST_BUDGET = max(0.0, float(settings["monthly_cloud_cost_budget"]))
             except (TypeError, ValueError):
                 pass
         if "llm_max_tokens" in settings:

@@ -19,6 +19,9 @@ class Config:
         self.active_profile_id = None
         self.MODEL_ROUTING_MODE = "cloud"
         self.LOCAL_MODEL = ""
+        self.LOCAL_FAST_MODEL = ""
+        self.LOCAL_GENERAL_MODEL = ""
+        self.LOCAL_STRONG_MODEL = ""
 
     def create_profile(self, data):
         profile = {**data, "id": str(len(self.profiles) + 1)}
@@ -34,6 +37,11 @@ class Config:
             self.MODEL_ROUTING_MODE = values["model_routing_mode"]
         if "local_model" in values:
             self.LOCAL_MODEL = values["local_model"]
+        for key, attribute in (("local_fast_model", "LOCAL_FAST_MODEL"),
+                               ("local_general_model", "LOCAL_GENERAL_MODEL"),
+                               ("local_strong_model", "LOCAL_STRONG_MODEL")):
+            if key in values:
+                setattr(self, attribute, values[key])
 
 
 class LocalModelsTests(unittest.IsolatedAsyncioTestCase):
@@ -168,6 +176,14 @@ class LocalModelsTests(unittest.IsolatedAsyncioTestCase):
             route = await client.post("/api/local-ai/routing", json={"mode": "local_only", "local_model": "qwen3:4b"}, headers={"Authorization": "Bearer admin-fixture"})
             self.assertEqual(route.status_code, 200, route.text)
             self.assertEqual(config.MODEL_ROUTING_MODE, "local_only")
+            tiered = await client.post("/api/local-ai/routing", json={
+                "mode": "smart", "local_fast_model": "qwen3:4b",
+                "local_general_model": "qwen3:4b", "local_strong_model": "qwen3:4b",
+                "smart_local_complexity_limit": 0.75,
+                "smart_tool_cloud_complexity": 0.45,
+            }, headers={"Authorization": "Bearer admin-fixture"})
+            self.assertEqual(tiered.status_code, 200, tiered.text)
+            self.assertEqual(config.LOCAL_GENERAL_MODEL, "qwen3:4b")
 
     def test_url_constraints(self):
         for url in ("https://api.openai.com", "http://169.254.169.254", "http://0.0.0.0", "http://user:password@localhost", "http://localhost/api"):

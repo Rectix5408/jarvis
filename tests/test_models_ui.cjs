@@ -22,7 +22,8 @@ function check(value, message) { assert.ok(value, message); checks++; }
         else if (path.endsWith('/status')) json = { online, version: 'fixture', error: 'Runtime offline', models: online ? [{ name: '<img src=x onerror=alert(1)>', size: 2500000000, details: { parameter_size: '4B' } }] : [], hardware: { cpu_percent: 12, cpu_count: 8, ram_total: 16000000000, ram_available: 8000000000, disk: { free: 10000000000 } } };
         else if (path.endsWith('/catalog')) json = [{ name: 'qwen3:4b', description: 'Qwen 3, 4B', license: 'Apache-2.0', size_estimate: 2500000000, source: 'https://ollama.com/library/qwen3:4b' }];
         else if (path.endsWith('/downloads')) json = pulled ? [{ model: 'qwen3:4b', status: 'DOWNLOADING', detail: 'pulling layer', completed: 47, total: 100 }] : [];
-        else if (path.endsWith('/routing') && route.request().method() === 'GET') json = { mode: 'local_first', local_model: 'qwen3:4b' };
+        else if (path.endsWith('/usage')) json = { today: { requests: 10, routes: { local: 7, deterministic: 2, cloud: 1 }, local_rate: 90 } };
+        else if (path.endsWith('/routing') && route.request().method() === 'GET') json = { mode: 'local_first', local_model: 'qwen3:4b', local_fast_model: '', local_general_model: 'qwen3:4b', local_strong_model: '', smart_local_complexity_limit: 0.86, smart_tool_cloud_complexity: 0.55 };
         else {
           mutations.push({ path, body: route.request().postDataJSON() });
           if (path.endsWith('/pull')) pulled = true;

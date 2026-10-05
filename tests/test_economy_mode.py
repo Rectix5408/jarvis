@@ -31,6 +31,12 @@ class EconomyTests(unittest.IsolatedAsyncioTestCase):
         cfg.MODEL_ROUTING_MODE = "cloud"
         cfg.LOCAL_MODEL = "qwen3:4b"
         cfg.LLM_MAX_TOKENS = 8192
+        self.usage_record = patch("backend.ai.usage.usage_tracker.record")
+        self.usage_totals = patch("backend.ai.usage.usage_tracker.cloud_totals", return_value=(0, 0.0))
+        self.usage_record.start()
+        self.usage_totals.start()
+        self.addCleanup(self.usage_record.stop)
+        self.addCleanup(self.usage_totals.stop)
 
     async def test_original_role_prompt_remains(self):
         prompt = method("backend/agent.py", "JarvisAgent", "_base_system_prompt", {})
