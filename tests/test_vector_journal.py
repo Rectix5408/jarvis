@@ -44,6 +44,8 @@ def main():
 
     try:
         from backend.tools import vector_store as VS
+        from tests.fake_embeddings import install
+        install(VS)
     except Exception as e:
         print(f"\nfaiss/sentence-transformers fehlen – uebersprungen ({e})")
         return True

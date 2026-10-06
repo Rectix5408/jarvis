@@ -202,9 +202,9 @@ def main() -> int:
                 return LLMResponse(parts=parts, raw=None, usage={})
 
         try:
-            agent = A.JarvisAgent()
-            halter = {"s": None}
+            halter = {"s": Stub([])}
             A.get_provider = lambda *a, **kw: halter["s"]
+            agent = A.JarvisAgent()
 
             # 1. Antwort: genau der gemeldete Muell. 2. Antwort: echtes Ergebnis
             # (das holt der Nachschlag).

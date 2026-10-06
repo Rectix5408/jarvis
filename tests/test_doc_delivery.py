@@ -39,6 +39,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENT = ROOT / "backend" / "agent.py"
+TEMP_ROOT = Path(tempfile.gettempdir())
 
 ok = 0
 fehler = 0
@@ -114,6 +115,7 @@ def baue(tmpdir: Path, dok: DokStub):
     """Liefert (deliver, clean) – beide gegen ein gefaelschtes Projektverzeichnis."""
     umg = {
         "re": re, "os": os, "time": time, "uuid": uuid, "asyncio": asyncio,
+        "Path": Path,
         "_documents": dok,
         "_log": lambda *a, **k: None,
         "__file__": str(tmpdir / "backend" / "agent.py"),
@@ -174,7 +176,7 @@ def main() -> int:
         aufraeumen = []
 
         abschnitt("2) DER GEMELDETE FALL, wortgleich")
-        quelle_datei = Path("/tmp") / f"KIM_Adressen_2026_{uuid.uuid4().hex[:6]}.csv"
+        quelle_datei = TEMP_ROOT / f"KIM_Adressen_2026_{uuid.uuid4().hex[:6]}.csv"
         quelle_datei.write_text("plz;ort\n66111;Saarbruecken\n", encoding="utf-8")
         aufraeumen.append(quelle_datei)
         antwort = f"Das Ergebnis liegt als CSV-Datei vor unter: {quelle_datei.as_posix()}"
@@ -194,7 +196,7 @@ def main() -> int:
         abschnitt("3) Jeder uebliche Ergebnistyp – Chip UND sauberer Text")
         for e in ("csv", "tsv", "txt", "json", "xml", "md", "zip", "xlsx", "docx",
                   "pdf", "html", "ics", "mp3"):
-            p = Path("/tmp") / f"ergebnis_{uuid.uuid4().hex[:6]}.{e}"
+            p = TEMP_ROOT / f"ergebnis_{uuid.uuid4().hex[:6]}.{e}"
             p.write_bytes(b"x" * 32)
             aufraeumen.append(p)
             s2 = AgentStub(EXT)
@@ -208,7 +210,7 @@ def main() -> int:
 
         abschnitt("4) Skripte bleiben Zwischenschritte")
         for e in ("py", "sh"):
-            p = Path("/tmp") / f"extract_{uuid.uuid4().hex[:6]}.{e}"
+            p = TEMP_ROOT / f"extract_{uuid.uuid4().hex[:6]}.{e}"
             p.write_text("print(1)\n", encoding="utf-8")
             aufraeumen.append(p)
             s3 = AgentStub(EXT)
@@ -216,7 +218,7 @@ def main() -> int:
             pruefe(f".{e}: KEIN Chip", chip_url(s3.gesendet) is None, str(s3.gesendet))
 
         abschnitt("5) Die Schranken von 2026-07-28 gelten weiter")
-        alt = Path("/tmp") / f"alt_{uuid.uuid4().hex[:6]}.csv"
+        alt = TEMP_ROOT / f"alt_{uuid.uuid4().hex[:6]}.csv"
         alt.write_text("a;b\n", encoding="utf-8")
         aufraeumen.append(alt)
         os.utime(alt, (time.time() - 8000, time.time() - 8000))
@@ -232,7 +234,7 @@ def main() -> int:
         pruefe("Datei ausserhalb /tmp und data/documents wird nicht ausgeliefert",
                chip_url(s5.gesendet) is None, str(s5.gesendet))
 
-        env = Path("/tmp") / f"cfg_{uuid.uuid4().hex[:6]}.env"
+        env = TEMP_ROOT / f"cfg_{uuid.uuid4().hex[:6]}.env"
         env.write_text("KEY=1\n", encoding="utf-8")
         aufraeumen.append(env)
         s6 = AgentStub(EXT)
@@ -245,7 +247,7 @@ def main() -> int:
         # ueberhaupt erst noetig gemacht: vorher war settings.json ausser Reichweite,
         # weil .json nicht ausgeliefert wurde. Der Test hat das Loch gefunden.
         for name in ("settings.json", "license.json", "ad_cache.json", ".owners.json"):
-            geheim = Path("/tmp") / name
+            geheim = TEMP_ROOT / name
             neu_angelegt = not geheim.exists()
             if neu_angelegt:
                 geheim.write_text("{}", encoding="utf-8")
@@ -260,7 +262,7 @@ def main() -> int:
                     pass
 
         abschnitt("6) Doppelte Auslieferung wird vermieden")
-        p = Path("/tmp") / f"einmal_{uuid.uuid4().hex[:6]}.csv"
+        p = TEMP_ROOT / f"einmal_{uuid.uuid4().hex[:6]}.csv"
         p.write_text("a;b\n", encoding="utf-8")
         aufraeumen.append(p)
         s7 = AgentStub(EXT)

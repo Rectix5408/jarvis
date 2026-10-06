@@ -496,11 +496,16 @@ def _ldap_redirects_safe(cmd: str) -> bool:
     targets, unparsed = _shell_write_targets(cmd)
     if unparsed:
         return False
+    # macOS resolves /tmp to /private/tmp. Compare resolved roots so the same
+    # policy remains portable while Linux keeps resolving to /tmp.
+    import tempfile
+    temp_roots = {_resolved_target("/tmp"), _resolved_target(tempfile.gettempdir())}
+    temp_roots.discard("")
     for t in targets:
         rp = _resolved_target(t)
         if not rp:                                  # nicht aufloesbar -> fail-closed
             return False
-        if rp != "/tmp" and not rp.startswith("/tmp/"):
+        if not any(rp == root or rp.startswith(root + "/") for root in temp_roots):
             return False
     return True
 
@@ -542,7 +547,11 @@ def _shell_write_is_attack(cmd: str) -> bool:
             # ploetzlich ein "Angriff", obwohl es nur ein vergessener Pfad ist.
             if t.startswith("/"):
                 rp = _resolved_target(t)
-                if rp and rp != t and _SHELL_WRITE_ATTACK_TARGET.match(rp):
+                # macOS exposes standard Unix paths through /private (for
+                # example /etc -> /private/etc). Match their canonical Unix
+                # alias so a symlink cannot evade attack classification.
+                policy_path = rp[len("/private"):] if rp.startswith("/private/") else rp
+                if rp and rp != t and _SHELL_WRITE_ATTACK_TARGET.match(policy_path):
                     return True
         return False
     except Exception:  # noqa: BLE001

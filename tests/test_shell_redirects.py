@@ -41,13 +41,13 @@ def check(cond, label):
 
 # ── Funktionen aus agent.py isoliert laden ──────────────────────────────────
 _src = (ROOT / "backend" / "agent.py").read_text(encoding="utf-8")
-_ns = {"re": re}
+_ns = {"re": re, "Path": Path}
 for _name in ("_SHELL_DEV_SINKS", "_SHELL_WRITE_ATTACK_TARGET"):
     m = re.search(r'\n(' + _name + r'\s*=\s*(?:frozenset\(|re\.compile\().*?\n\))', _src, re.S)
     assert m, f"{_name} nicht in agent.py gefunden"
     exec(m.group(1), _ns)
 for _name in ("_strip_heredocs", "_shell_redirect_writes", "_shell_write_targets",
-              "_ldap_redirects_safe", "_shell_write_is_attack"):
+              "_resolved_target", "_ldap_redirects_safe", "_shell_write_is_attack"):
     m = re.search(r'\ndef ' + _name + r'\(.*?(?=\ndef |\n[A-Z_]{3,}\s*=|\n# ──|\Z)', _src, re.S)
     assert m, f"{_name} nicht in agent.py gefunden"
     exec(m.group(0), _ns)

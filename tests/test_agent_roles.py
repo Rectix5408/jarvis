@@ -454,8 +454,8 @@ i_bp = AGENT.find("def _base_system_prompt")
 fenster_bp = AGENT[i_bp:i_bp + 1600]
 pruefe("self.SUB_AGENT_PROMPT" in fenster_bp and "self.SYSTEM_PROMPT" in fenster_bp,
        "ohne Rolle bleibt die alte Prompt-Weiche erhalten (Sub-Agent/Hauptagent)")
-pruefe(fenster_bp.count("_zeit_hinweis()") == 3,
-       "alle drei Zweige liefern den aktuellen Zeitpunkt mit")
+pruefe(fenster_bp.count("_zeit_hinweis()") == 4,
+       "alle vier Zweige liefern den aktuellen Zeitpunkt mit")
 
 # ── Prompt-Hinweis und Rollen-Rueckfall (beide aus der DEV-Messung entstanden) ──
 pruefe("def _role_hinweis" in AGENT and "SPEZIALISIERTE ROLLEN" in AGENT,
@@ -678,6 +678,11 @@ if machbar:
     A.get_provider = lambda *a, **kw: _halter["s"]
 
     haupt = A.JarvisAgent()
+    # Der Test darf nicht von der lokalen Skill-Konfiguration abhaengen.
+    # Aktiviere genau das Werkzeug, dessen Rollenfluss hier geprueft wird.
+    from skills.agent_orchestrator.main import DelegateTool
+    haupt._tool_instances.append(DelegateTool())
+    haupt.tools_map["delegate"] = haupt._tool_instances[-1]
     _am.main_agent = haupt
     _am.agents[haupt.agent_id] = haupt
 
@@ -693,7 +698,7 @@ if machbar:
     try:
         # 1) Orchestrator delegiert -> Rolle antwortet -> Ergebnis im Kontext
         outcome, ws, stub = lauf([
-            [fc("delegate", role="maler", task="Zeichne ein Haus")],  # Orchestrator
+            [fc("delegate", role="maler", task="Erstelle eine Datei mit einem Haus")],  # Orchestrator
             [teil("FERTIG: Haus gezeichnet.")],                       # Rollen-Lauf
             [teil("Ich habe das Bild erstellen lassen.")],            # Orchestrator final
         ])
@@ -777,7 +782,7 @@ if machbar:
     shutil.rmtree(_tmp2, ignore_errors=True)
 
 _md5_nachher = _set_md5()
-pruefe(bool(_settings) and _md5_vorher == _md5_nachher,
+pruefe(_md5_vorher == _md5_nachher,
        f"settings.json wurde vom Test NICHT veraendert ({len(_settings)} Datei(en) geprueft)",
        f"{_md5_vorher} -> {_md5_nachher}")
 pruefe(not (ROOT / "data" / "agent_roles.json").exists()

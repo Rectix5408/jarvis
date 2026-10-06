@@ -6,7 +6,7 @@ sys.path.insert(0, str(ROOT))
 src = (ROOT / "backend" / "agent.py").read_text(encoding="utf-8")
 start = src.index("def _seed_instructions()")
 end = src.index("def load_instructions()")
-ns = {"Path": pathlib.Path}
+ns = {"Path": pathlib.Path, "__file__": str(ROOT / "backend" / "agent.py")}
 tmp = tempfile.TemporaryDirectory(); T = pathlib.Path(tmp.name)
 ns["INSTRUCTIONS_DIR"] = T / "instructions"
 ns["INSTRUCTIONS_DEFAULT_DIR"] = T / "instructions_default"

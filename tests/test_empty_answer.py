@@ -74,7 +74,7 @@ pruefe("_nur_absicht" in fenster,
 
 # Die Weiche steht VOR der Erfolgsmeldung
 i_weiche = AGENT.find("if not _answer_sent and not _delivered_docs:")
-i_fertig = AGENT.find('await self._send_status(ws, "✅ Aufgabe abgeschlossen")')
+i_fertig = AGENT.find('await self._send_status(ws, "✅ Aufgabe abgeschlossen")', i_weiche)
 pruefe(0 < i_weiche < i_fertig,
        "Pruefung steht VOR '✅ Aufgabe abgeschlossen' (sonst waere sie wirkungslos)")
 pruefe("_empty_finish = True" in AGENT[i_weiche:i_weiche + 400],
@@ -192,13 +192,14 @@ if HABEN_FASTAPI:
                 parts = self.folge.pop(0)
             else:
                 parts = [teil("Standardantwort")]
-            return LLMResponse(parts=parts, raw=None, usage={})
+            raw = type("Raw", (), {"candidates": [type("Candidate", (), {
+                "content": types.Content(role="model", parts=[]),
+            })()]})()
+            return LLMResponse(parts=parts, raw=raw, usage={})
 
     # EINEN echten Agenten bauen (kein __new__-Nachbau: run_task braucht ein
     # vollstaendig eingerichtetes Objekt – Stop-Scopes, Telemetrie, Verlaufs-
     # Buchhaltung).
-    _agent = A.JarvisAgent()
-
     # ── DER PROVIDER MUSS UEBER get_provider GEPATCHT WERDEN ──────────────
     # run_task setzt `self.provider = get_provider(...)` bei JEDEM Lauf neu
     # (agent.py:1255). Ein vorher zugewiesenes Attribut wird dabei
@@ -207,10 +208,11 @@ if HABEN_FASTAPI:
     # httpx-Aufruf). Ein Test, der versehentlich das Produktionsmodell fragt,
     # beweist nichts und kostet Geld. Mit diesem Patch ist ein echter Aufruf
     # ausgeschlossen.
-    _stub_halter = {"s": None}
+    _stub_halter = {"s": Stub([])}
     A.get_provider = lambda *a, **kw: _stub_halter["s"]
+    _agent = A.JarvisAgent()
 
-    def lauf(folge, verlauf_vorher=None):
+    def lauf(folge, verlauf_vorher=None, task="Testfrage"):
         """Einen run_task-Lauf mit Stub fahren. Rueckgabe (outcome, ws, stub)."""
         stub = Stub(folge)
         _stub_halter["s"] = stub
@@ -220,7 +222,7 @@ if HABEN_FASTAPI:
         if verlauf_vorher is not None:
             _agent._user_histories[A._hist_key("jarvis")] = list(verlauf_vorher)
         ws = WSAttrappe()
-        outcome = asyncio.run(_agent.run_task("Testfrage", ws, username="jarvis"))
+        outcome = asyncio.run(_agent.run_task(task, ws, username="jarvis"))
         return outcome, ws, stub
 
     def verlauf():
@@ -291,7 +293,7 @@ if HABEN_FASTAPI:
             [teil("Ich schaue kurz nach …"), fc],   # Zwischentext + Werkzeug
             [teil("   ")],                          # leerer Abschluss
             [teil("Endgueltige Antwort")],           # Nachschlag
-        ])
+        ], task="Führe das Testwerkzeug aus")
         pruefe(any("Endgueltige Antwort" in t for t in ws.antworten()),
                "Zwischentext + leerer Abschluss: Nachschlag greift trotzdem")
         pruefe(sum(1 for a in stub.aufrufe if a["tools"]) == 2

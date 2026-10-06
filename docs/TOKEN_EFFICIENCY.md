@@ -60,19 +60,20 @@ invented by the benchmark.
 
 Stage 2 verification adds the compact prompt and long-history scenario:
 
-| Scenario | Original | Stage 1 | Stage 2 |
-|---|---:|---:|---:|
-| Simple chat | 10,954 | 4,351 | 222 |
-| Knowledge | 10,954 | 4,522 | 4,522 |
-| Memory | 10,954 | 4,636 | 4,636 |
-| Single tool | 10,954 | 4,671 | 4,671 |
-| Multi tool | 10,954 | 6,498 | 6,498 |
-| Subagent | 10,954 | 5,148 | 5,148 |
-| Long conversation | 17,452 | 10,849 | 6,720 |
+| Scenario | Original | Stage 1 | Stage 2 | Final |
+|---|---:|---:|---:|---:|
+| Simple chat | 10,954 | 4,351 | 222 | 223 |
+| Knowledge | 10,954 | 4,522 | 4,522 | 4,522 |
+| Memory | 10,954 | 4,636 | 4,636 | 4,637 |
+| Single tool | 10,954 | 4,671 | 4,671 | 4,672 |
+| Multi tool | 10,954 | 6,498 | 6,498 | 6,498 |
+| Subagent | 10,954 | 5,148 | 5,148 | 5,148 |
+| Long conversation | 17,452 | 10,849 | 6,720 | 6,721 |
 
 All values are static character estimates produced by the benchmark. Provider
 usage remains separate and is labelled `measured` only when returned by the
-provider.
+provider. The final verification ran on 2026-10-06; one-token differences are
+caused by the dated system-prompt text, not by a changed routing path.
 
 ## Configuration
 

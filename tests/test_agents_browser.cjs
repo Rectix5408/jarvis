@@ -4,11 +4,12 @@ const { createRequire } = require('node:module');
 const dependency = createRequire(`${process.env.DASHBOARD_NODE_MODULES || '/tmp/jarvis-dashboard-tools/node_modules'}/package.json`);
 const { chromium } = dependency('playwright');
 const base = process.env.DASHBOARD_URL || 'http://127.0.0.1:8769';
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 let checks = 0;
 function check(value, message) { assert.ok(value, message); checks++; }
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(executablePath ? { executablePath } : {});
   try {
     for (const width of [1440, 820, 390, 320]) {
       const context = await browser.newContext({ viewport: { width, height: 900 } });

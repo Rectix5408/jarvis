@@ -32,6 +32,8 @@ wsgidav>=4.3.0
 # VORHANDENSEIN, nicht um eine Version.
 requests               # jira_client, sap_client, google_auth, web_extractor, ibs
 httpx                  # knowledge_sync (Standort-Sync), model_caps, file_watcher, web_extractor
+pydantic               # direkte Request-/Workflow-Modelle in operations, workflows, local_models
+urllib3                 # direkte TLS-Warnungssteuerung in mail_client
 cryptography           # credential encryption and TLS certificate handling
 starlette              # direkt genutzt in main.py (kommt sonst nur ueber fastapi)
 # NICHT deklariert, mit Absicht: torch. Es kommt mit sentence-transformers, und

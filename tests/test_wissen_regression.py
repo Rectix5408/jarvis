@@ -318,8 +318,8 @@ def test_a1_freigabe_ohne_vollreindex():
 
 def _stub_channels(vs, ranking):
     """Laesst alle drei Kanaele dieselbe Reihenfolge liefern."""
-    vs._search_vector_idx = lambda q, k: [(i, 1.0) for i in ranking]
-    vs._search_lexical_idx = lambda q, k: [(i, 1.0) for i in ranking]
+    vs._search_vector_idx = lambda q, k, *args: [(i, 1.0) for i in ranking]
+    vs._search_lexical_idx = lambda q, k, *args: [(i, 1.0) for i in ranking]
 
 
 def test_a5_gewicht_vor_dem_cut():
@@ -366,7 +366,7 @@ def test_a4_generationswechsel():
 
     zustand = {"n": 0}
 
-    def kippen(q, k):
+    def kippen(q, k, *args):
         # Beim ERSTEN Durchgang aendert sich der Index zwischen den Kanaelen:
         # genau das Fenster, in dem sich die Positionen verschieben.
         zustand["n"] += 1
@@ -377,7 +377,7 @@ def test_a4_generationswechsel():
         return [(0, 1.0), (1, 0.9)]
 
     vs._search_vector_idx = kippen
-    vs._search_lexical_idx = lambda q, k: [(0, 1.0)]
+    vs._search_lexical_idx = lambda q, k, *args: [(0, 1.0)]
 
     out = vs.search_hybrid("frage", 3)
     # Alter Stand: Positionen aus dem ALTEN Zustand wurden gegen die NEUE Liste

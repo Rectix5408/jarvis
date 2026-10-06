@@ -235,8 +235,10 @@ section("6) Seitenweise Mischung – der OCR-Text landet auf der RICHTIGEN Seite
 
 # Genau der Fehler, den die lueckenlose Seitenliste verhindert: haette man
 # leere Seiten uebersprungen, laege der OCR-Text von Seite 3 auf Seite 2.
-gefaelscht = {1: "Seite eins per OCR sauber 01.07.2026 info@example.de 67697",
-              3: "Seite drei per OCR sauber 02.07.2026 post@example.de 42579"}
+gefaelscht = {
+    1: "Seite eins per OCR sauber\n" + SAUBER,
+    3: "Seite drei per OCR sauber 02.07.2026 post@example.de 42579",
+}
 kb._ocr_pdf_seiten = lambda b, e=1, l=20: (
     {k: v for k, v in gefaelscht.items() if e <= k <= l} if l > 1
     else {e: gefaelscht.get(e, "")} if gefaelscht.get(e) else {})
