@@ -34,6 +34,12 @@ services:
       # !! WICHTIG: Auf die eigene Server-IP setzen – sonst wird das SSL-Zertifikat
       # !! von Windows abgelehnt! Beispiel: SERVER_IP: "1.2.3.4"
       SERVER_IP: "${SERVER_IP:-127.0.0.1}"
+      # Google Web-OAuth: nur die benoetigten Werte zur Laufzeit weitergeben.
+      # Die alten Namen ohne _OAUTH_ bleiben fuer bestehende Server-.env-Dateien
+      # als Migrationsfallback erhalten.
+      GOOGLE_OAUTH_CLIENT_ID: "${GOOGLE_OAUTH_CLIENT_ID:-${GOOGLE_CLIENT_ID:-}}"
+      GOOGLE_OAUTH_CLIENT_SECRET: "${GOOGLE_OAUTH_CLIENT_SECRET:-${GOOGLE_CLIENT_SECRET:-}}"
+      GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI:-}"
       # LLM API-Keys (alternativ im Web-UI unter Einstellungen eintragen)
       # GEMINI_API_KEY: "..."
       # ANTHROPIC_API_KEY: "..."
