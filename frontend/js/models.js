@@ -3,152 +3,84 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const token = () => localStorage.getItem('jarvis_chat_token') || localStorage.getItem('jarvis_token') || localStorage.getItem('jarvis_uc_token') || '';
-  let disposed = false, busy = false, refreshing = false, routingDirty = false, timer, lastSnapshot = '';
-  const controllers = new Set();
-  const bytes = n => Number.isFinite(n) ? `${(n / 1e9).toFixed(1)} GB` : 'Unbekannt';
-  function node(tag, text, cls) { const el = document.createElement(tag); el.textContent = text || ''; if (cls) el.className = cls; return el; }
-  async function api(path, body) {
-    const controller = new AbortController(); controllers.add(controller);
-    const timeout = setTimeout(() => controller.abort(), body && /test|activate/.test(path) ? 200000 : 20000);
+  const activeStates = new Set(['QUEUED', 'VALIDATING', 'DOWNLOADING', 'VERIFYING', 'CANCELLING']);
+  const errors = {
+    RUNTIME_UNAVAILABLE: 'Ollama ist nicht erreichbar.', MODEL_NOT_FOUND: 'Das Modell wurde nicht gefunden.',
+    MODEL_ALREADY_INSTALLED: 'Das Modell ist bereits installiert.', MODEL_DOWNLOAD_ACTIVE: 'Dieses Modell wird bereits heruntergeladen.',
+    MODEL_JOB_CONFLICT: 'Eine andere Modelloperation laeuft bereits.', MODEL_INSUFFICIENT_MEMORY: 'Nicht genug sicherer Arbeitsspeicher.',
+    MODEL_INSUFFICIENT_RAM: 'Nicht genug sicherer Arbeitsspeicher.', MODEL_INSUFFICIENT_DISK: 'Nicht genug freier Modellspeicher.',
+    MODEL_INCOMPATIBLE: 'Das Modell ist mit diesem Server nicht kompatibel.', MODEL_LOAD_FAILED: 'Das Modell konnte nicht geladen werden.',
+    MODEL_DELETE_BLOCKED: 'Das Modell ist einer Routing-Rolle zugewiesen.', MODEL_DOWNLOAD_FAILED: 'Der Download ist fehlgeschlagen.',
+    MODEL_DOWNLOAD_CANCELLED: 'Der Download wurde abgebrochen.',
+  };
+  const reasonText = { INSUFFICIENT_RAM: 'Aktuell zu wenig RAM', INSUFFICIENT_RAM_HARD: 'Modell passt nicht in den RAM', INSUFFICIENT_DISK: 'Zu wenig Speicherplatz', GPU_REQUIRED: 'GPU erforderlich', UNSUPPORTED_ARCHITECTURE: 'Architektur nicht unterstuetzt', RUNTIME_UNAVAILABLE: 'Runtime offline', CAPABILITY_MISMATCH: 'Nicht fuer diese Rolle empfohlen', UNKNOWN_REQUIREMENTS: 'Anforderungen unbekannt' };
+  let disposed = false, refreshing = false, mutating = false, timer = 0, controllers = new Set(), snapshot = null;
+  const node = (tag, text, cls) => { const el = document.createElement(tag); if (text != null) el.textContent = text; if (cls) el.className = cls; return el; };
+  const bytes = value => Number.isFinite(Number(value)) && Number(value) > 0 ? `${(Number(value) / 1e9).toFixed(1)} GB` : 'Unknown';
+  const date = value => value ? new Date(Number(value) * 1000).toLocaleString('de-DE') : 'Unknown';
+  function message(text, bad = false) { $('models-message').textContent = text || ''; $('models-message').dataset.error = String(bad); }
+  async function api(path, body, timeout = 25000) {
+    const controller = new AbortController(); controllers.add(controller); const deadline = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch('/api/local-ai/' + path, {
-        method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-        ...(body ? { body: JSON.stringify(body) } : {}), signal: controller.signal,
-      });
-      if (response.status === 401 || response.status === 403) {
-        $('models-content').hidden = true; $('models-login').hidden = false;
-        throw new Error(response.status === 403 ? 'Administratorrechte erforderlich.' : 'Bitte anmelden.');
-      }
-      const data = await response.json();
-      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Anfrage fehlgeschlagen.');
+      const response = await fetch('/api/local-ai/' + path, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: controller.signal });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401 || response.status === 403) { $('models-content').hidden = true; $('models-login').hidden = false; throw new Error('Administratorrechte erforderlich.'); }
+      if (!response.ok) { const detail = data.detail || {}; throw new Error(errors[detail.code] || detail.message || (typeof detail === 'string' ? detail : 'Anfrage fehlgeschlagen.')); }
       return data;
-    } finally { clearTimeout(timeout); controllers.delete(controller); }
+    } finally { clearTimeout(deadline); controllers.delete(controller); }
   }
-  function button(label, icon, action, disabled = false) {
-    const el = node('button', '', 'model-icon'); el.title = label; el.setAttribute('aria-label', label); el.disabled = disabled;
-    const symbol = node('i'); symbol.dataset.lucide = icon; el.append(symbol); el.addEventListener('click', action); return el;
+  function badge(text, state) { const el = node('span', text, 'badge'); el.dataset.state = String(state || 'unknown').toLowerCase(); return el; }
+  function iconButton(label, icon, action, disabled = false, danger = false) { const el = node('button', '', 'model-icon' + (danger ? ' danger' : '')); el.type = 'button'; el.title = label; el.setAttribute('aria-label', label); el.disabled = disabled; const i = node('i'); i.dataset.lucide = icon; el.append(i); el.addEventListener('click', action); return el; }
+  function empty(target, text) { target.replaceChildren(node('p', text, 'empty-state')); }
+  function metadata(model) { return [model.family, model.parameters, model.quantization, model.context_length ? `${model.context_length} ctx` : null].filter(Boolean).join(' · ') || 'Metadaten unbekannt'; }
+  function capabilities(model) { const wrap = node('div', '', 'capabilities'); Object.entries(model.capabilities || {}).filter(([, enabled]) => enabled === true).forEach(([name]) => wrap.append(node('span', name.replace('_', ' '), 'capability'))); return wrap; }
+  function compatibility(model) { const result = model.compatibility || { state: 'unknown', reasons: ['UNKNOWN_REQUIREMENTS'] }; const wrap = node('div', '', 'badge-line'); wrap.append(badge(result.state === 'compatible' && (model.recommended_roles || []).length ? 'Recommended' : result.state, result.state)); const reasons = (result.reasons || []).map(code => reasonText[code] || 'Unbekannte Einschraenkung'); if (reasons.length) { const detail = node('span', reasons.join(' · '), 'model-meta'); detail.title = reasons.join('\n'); wrap.append(detail); } return wrap; }
+  function confirmAction(title, text, facts = []) { const dialog = $('confirm-dialog'); $('confirm-title').textContent = title; $('confirm-text').textContent = text; $('confirm-facts').replaceChildren(...facts.flatMap(([key, value]) => { const dt = node('dt', key), dd = node('dd', value); return [dt, dd]; })); dialog.showModal(); $('confirm-action').focus(); return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true })); }
+  async function mutate(path, body, options = {}) {
+    if (mutating) return null; if (options.confirm && !await confirmAction(options.confirm.title, options.confirm.text, options.confirm.facts)) return null;
+    mutating = true; message(options.pending || 'Aktion wird ausgefuehrt.');
+    try { const result = await api(path, body, options.timeout || 200000); message(options.success || 'Aktion abgeschlossen.'); await refresh(true); return result; }
+    catch (error) { message(error.name === 'AbortError' ? 'Zeitlimit erreicht. Status wird erneut geladen.' : error.message, true); await refresh(true); return null; }
+    finally { mutating = false; }
   }
-  function row(name, description) {
-    const el = node('article', '', 'model-row'), text = node('div');
-    text.append(node('h3', name, 'model-name'), node('p', description, 'model-meta')); el.append(text);
-    return { el, text };
+  function renderHardware(status) {
+    const h = status.hardware || {}, cpu = h.cpu || {}, memory = h.memory || {}, disk = h.disk || {}, gpu = h.gpu || {};
+    const totalRam = memory.total || h.ram_total, availableRam = memory.available || h.ram_available;
+    const usedPercent = totalRam ? Math.max(0, Math.min(100, (1 - availableRam / totalRam) * 100)) : null;
+    const values = [
+      ['CPU', [cpu.logical_cpus || h.cpu_count, cpu.model].filter(Boolean).join(' vCPU · ') || 'Unknown'],
+      ['RAM', `${bytes(availableRam)} available / ${bytes(totalRam)}`, usedPercent],
+      ['Disk', disk.available || disk.free ? `${bytes(disk.available || disk.free)} available / ${bytes(disk.total)}` : h.disk_error || 'Unknown'],
+      ['GPU', gpu.type && gpu.type !== 'none' ? `${gpu.type.toUpperCase()} · ${bytes(gpu.vram_total)}` : 'No Compute GPU'],
+      ['Architecture', h.architecture || 'Unknown'],
+      ['Loaded Models', `${(status.running_models || []).length} / ${status.max_loaded_models || 1}`],
+    ];
+    $('hardware').replaceChildren(...values.map(([name, value, percent]) => { const wrap = node('div'); wrap.append(node('dt', name), node('dd', value)); if (percent != null) { const meter = node('div', '', 'meter'); meter.setAttribute('aria-label', `RAM ${Math.round(percent)} Prozent verwendet`); const fill = node('span'); fill.style.width = `${percent}%`; meter.append(fill); wrap.append(meter); } return wrap; }));
   }
-  async function action(path, model) {
-    if (busy) return;
-    if (path === 'delete' && !confirm(`${model} aus der lokalen Runtime entfernen?`)) return;
-    if (path === 'activate' && !confirm(`${model} als globales Standardprofil aktivieren? Persoenliche Profilwahlen bleiben erhalten.`)) return;
-    busy = true;
-    document.querySelectorAll('.model-actions button').forEach(button => button.disabled = true);
-    $('models-message').textContent = path === 'test' || path === 'activate' ? 'Lokaler Antworttest laeuft.' : 'Anfrage wird verarbeitet.';
-    try {
-      const body = path === 'routing' ? {
-        mode: $('routing-mode').value,
-        local_model: $('local-general-model').value,
-        local_fast_model: $('local-fast-model').value,
-        local_general_model: $('local-general-model').value,
-        local_strong_model: $('local-strong-model').value,
-        smart_local_complexity_limit: Number($('smart-local-limit').value),
-        smart_tool_cloud_complexity: Number($('smart-tool-limit').value),
-        daily_cloud_token_budget: Number($('daily-cloud-budget').value),
-        monthly_cloud_cost_budget: Number($('monthly-cloud-budget').value),
-      } : { model };
-      const result = await api(path, body);
-      if (path === 'routing') routingDirty = false;
-      if (path === 'details') {
-        $('model-details-content').textContent = JSON.stringify(result, null, 2); $('model-details').showModal();
-      }
-      $('models-message').textContent = path === 'test' ? `${result.response} · ${result.latency_ms} ms · lokal` : path === 'activate' ? 'Lokales Routing-Modell ausgewaehlt.' : path === 'routing' ? 'Routing-Richtlinie gespeichert.' : path === 'pull' ? 'Installation gestartet.' : path === 'delete' ? 'Modell entfernt.' : '';
-    } catch (error) { $('models-message').textContent = error.name === 'AbortError' ? 'Zeitlimit erreicht; Status erneut pruefen.' : error.message; }
-    finally { busy = false; lastSnapshot = ''; if (!disposed) await refresh(); }
-  }
-  async function refresh() {
-    if (refreshing || disposed || busy || document.hidden) return;
-    refreshing = true;
-    try {
-      const status = await api('status'), jobs = await api('downloads'), catalog = await api('catalog'), routing = await api('routing'), usage = await api('usage');
-      if (disposed) return;
-      $('models-content').hidden = false; $('models-login').hidden = true;
-      if ($('models-message').textContent === 'Verbindung wird geprueft.') $('models-message').textContent = '';
-      $('runtime-status').textContent = status.online ? `Online · ${status.version || 'Version unbekannt'}` : status.error || 'Offline';
-      $('runtime-status').dataset.online = String(status.online);
-      if (!routingDirty) {
-        $('routing-mode').value = routing.mode;
-        $('routing-mode').dataset.localModel = routing.local_model || '';
-        const installedNames = status.models.map(model => model.name);
-        for (const [id, selected] of [
-          ['local-fast-model', routing.local_fast_model],
-          ['local-general-model', routing.local_general_model || routing.local_model],
-          ['local-strong-model', routing.local_strong_model],
-        ]) {
-          const select = $(id);
-          select.replaceChildren(node('option', 'Nicht zugewiesen'));
-          select.firstElementChild.value = '';
-          for (const name of installedNames) { const option = node('option', name); option.value = name; select.append(option); }
-          select.value = installedNames.includes(selected) ? selected : '';
-        }
-        $('smart-local-limit').value = routing.smart_local_complexity_limit ?? 0.86;
-        $('smart-tool-limit').value = routing.smart_tool_cloud_complexity ?? 0.55;
-        $('daily-cloud-budget').value = routing.daily_cloud_token_budget ?? 0;
-        $('monthly-cloud-budget').value = routing.monthly_cloud_cost_budget ?? 0;
-      }
-      const today = usage.today || {}, routes = today.routes || {};
-      const metrics = [
-        ['Anfragen', today.requests || 0], ['Lokal', routes.local || 0],
-        ['Deterministisch', routes.deterministic || 0], ['Cloud', routes.cloud || 0],
-        ['Lokalrate', `${today.local_rate || 0} %`],
-      ];
-      $('usage-metrics').replaceChildren(...metrics.map(([label, value]) => {
-        const item = node('div', '', 'usage-metric'); item.append(node('strong', String(value)), node('span', label)); return item;
-      }));
-      const h = status.hardware;
-      const values = [['CPU (JARVIS-Host)', `${h.cpu_percent ?? '?'} % · ${h.cpu_count ?? '?'} Kerne`], ['RAM frei / gesamt', `${bytes(h.ram_available)} / ${bytes(h.ram_total)}`], ['Modell-Volume frei', h.disk ? bytes(h.disk.free) : h.disk_error], ['GPU / VRAM', 'Nicht ermittelt']];
-      $('hardware').replaceChildren(...values.map(([name, value]) => { const pair = node('div'); pair.append(node('dt', name), node('dd', value)); return pair; }));
-      const snapshot = JSON.stringify([status.models, jobs, catalog, status.online, !!h.disk]);
-      // Keep keyboard focus stable when a poll has no changes to the model lists.
-      if (snapshot === lastSnapshot) return;
-      lastSnapshot = snapshot;
-      const installing = jobs.some(job => ['QUEUED','DOWNLOADING','VERIFYING','TESTING'].includes(job.status));
-      $('installed-models').replaceChildren(...status.models.map(model => {
-        const r = row(model.name, `${bytes(model.size)} · ${model.details?.parameter_size || ''} · ${model.details?.quantization_level || ''}`);
-        const actions = node('div', '', 'model-actions');
-        for (const [path, label, icon] of [['activate','Als lokales Routing-Modell verwenden','check'],['test','Modell testen','play'],['details','Details','info'],['delete','Modell entfernen','trash-2']]) {
-          const control = button(label, icon, () => action(path, model.name), !status.online || (path === 'delete' && installing));
-          if (path === 'delete') control.classList.add('danger'); actions.append(control);
-        }
-        r.el.append(actions); return r.el;
-      }));
-      if (!status.models.length) $('installed-models').append(node('p', status.online ? 'Keine Modelle installiert.' : 'Modellliste nicht erreichbar.', 'model-meta'));
-      $('model-downloads').replaceChildren(...jobs.map(job => {
-        const r = row(job.model, `${job.status} · ${job.detail}`);
-        if (job.total > 0 && job.status === 'DOWNLOADING') {
-          r.text.append(node('p', `Aktuelle Schicht: ${bytes(job.completed)} / ${bytes(job.total)}`, 'model-meta'));
-          const progress = node('progress'); progress.max = job.total; progress.value = job.completed; progress.setAttribute('aria-label', 'Download der aktuellen Modellschicht'); r.text.append(progress);
-        }
-        return r.el;
-      }));
-      if (!jobs.length) $('model-downloads').append(node('p', 'Keine Installationen.', 'model-meta'));
-      $('model-catalog').replaceChildren(...catalog.map(model => {
-        const r = row(model.name, `${model.description} · Download ca. ${bytes(model.size_estimate)} · ${model.license}`);
-        const source = node('a', 'Modell und Lizenz'); source.href = model.source; source.target = '_blank'; source.rel = 'noopener noreferrer'; r.text.append(source);
-        const actions = node('div', '', 'model-actions'); actions.append(button('Installieren', 'download', () => action('pull', model.name), !status.online || !h.disk || installing)); r.el.append(actions); return r.el;
-      }));
-      window.lucide?.createIcons();
-    } catch (error) {
-      if (!disposed) {
-        $('models-message').textContent = error.message; lastSnapshot = '';
-        $('runtime-status').textContent = 'Status nicht erreichbar'; $('runtime-status').dataset.online = 'false';
-        document.querySelectorAll('.model-actions button').forEach(button => button.disabled = true);
-      }
+  function renderRoles(routing, installed, registry) {
+    const installedNames = new Set(installed.map(model => model.name)); const registryMap = new Map(registry.map(model => [model.runtime_id, model]));
+    for (const [id, role, selected] of [['local-fast-model','fast',routing.local_fast_model], ['local-general-model','general',routing.local_general_model || routing.local_model], ['local-strong-model','strong',routing.local_strong_model]]) {
+      const select = $(id), previous = selected || ''; select.replaceChildren();
+      const cloud = node('option', role === 'strong' ? 'Cloud' : 'Nicht zugewiesen'); cloud.value = ''; cloud.disabled = role !== 'strong'; select.append(cloud);
+      installedNames.forEach(name => { const model = registryMap.get(name), option = node('option', model?.display_name || name); option.value = name; const state = model?.compatibility?.state; option.disabled = state === 'incompatible' || model?.capabilities?.chat !== true; if (option.disabled) option.textContent += ' · nicht kompatibel'; select.append(option); });
+      select.value = installedNames.has(previous) ? previous : ''; select.dataset.previous = select.value;
     }
-    finally { refreshing = false; }
+    $('routing-mode').value = routing.mode || 'cloud'; $('smart-local-limit').value = routing.smart_local_complexity_limit ?? .86; $('smart-tool-limit').value = routing.smart_tool_cloud_complexity ?? .55; $('daily-cloud-budget').value = routing.daily_cloud_token_budget ?? 0; $('monthly-cloud-budget').value = routing.monthly_cloud_cost_budget ?? 0;
   }
-  $('refresh-models').addEventListener('click', refresh);
-  $('save-routing').addEventListener('click', () => action('routing', $('routing-mode').dataset.localModel || ''));
-  document.querySelectorAll('.routing-controls select, .routing-controls input').forEach(control => {
-    control.addEventListener('change', () => { routingDirty = true; });
-  });
-  $('close-model-details').addEventListener('click', () => $('model-details').close());
-  document.addEventListener('visibilitychange', refresh);
-  window.addEventListener('pagehide', () => { disposed = true; clearInterval(timer); controllers.forEach(controller => controller.abort()); });
-  refresh(); timer = setInterval(refresh, 3000);
+  function renderInstalled(status, registry, routing) {
+    const target = $('installed-models'), map = new Map(registry.map(model => [model.runtime_id, model])), running = new Set((status.running_models || []).map(model => model.name));
+    const roles = new Map([[routing.local_fast_model,'FAST'], [routing.local_general_model || routing.local_model,'GENERAL'], [routing.local_strong_model,'STRONG']].filter(([name]) => name));
+    const items = (status.installed_models || status.models || []).map(runtime => { const model = map.get(runtime.name) || { runtime_id: runtime.name, display_name: runtime.name, capabilities: {}, compatibility: { state: 'unknown', reasons: ['UNKNOWN_REQUIREMENTS'] } }; const loaded = running.has(runtime.name), assigned = roles.get(runtime.name); const row = node('article', '', 'model-row'), text = node('div'); text.append(node('h3', model.display_name, 'model-name'), node('p', `${model.runtime_id} · ${metadata(model)} · ${bytes(runtime.size)}`, 'model-meta')); const line = node('div', '', 'badge-line'); line.append(badge(loaded ? 'Loaded' : 'Stopped', loaded ? 'loaded' : 'stopped')); if (assigned) line.append(badge(assigned, 'compatible')); line.append(compatibility(model)); text.append(line, capabilities(model)); const actions = node('div', '', 'model-actions'); actions.append(iconButton('Modell laden', 'play', () => mutate('load', { model: runtime.name }, { success: 'Modell geladen.' }), loaded || !status.online), iconButton('Modell entladen', 'square', () => mutate('unload', { model: runtime.name }, { success: 'Modell entladen.' }), !loaded || !status.online), iconButton('Modell testen', 'activity', async () => { const result = await mutate('test', { model: runtime.name }, { pending: 'Modelltest laeuft.', success: 'Modelltest erfolgreich.' }); if (result) { $('result-content').replaceChildren(node('p', `${result.response || 'OK'} · ${result.latency_ms ?? '?'} ms`)); $('result-dialog').showModal(); } }, !status.online), iconButton(assigned ? `Loeschen blockiert: ${assigned}` : 'Modell loeschen', 'trash-2', () => mutate('delete', { model: runtime.name }, { confirm: { title: `${model.display_name} loeschen?`, text: 'Modelldateien werden aus der lokalen Ollama-Runtime entfernt.', facts: [['Modell',runtime.name],['Groesse',bytes(runtime.size)]] }, success: 'Modell entfernt.' }), !!assigned || !status.online, true)); row.append(text, actions); return row; });
+    items.length ? target.replaceChildren(...items) : empty(target, status.online ? 'Keine lokalen Modelle installiert.' : 'Installierte Modelle sind bei offline Runtime nicht verfuegbar.');
+  }
+  function renderRegistry(registry, installed, hardware, online) {
+    const target = $('model-catalog'), installedNames = new Set(installed.map(model => model.name)); const items = registry.map(model => { const card = node('article', '', 'model-card'), text = node('div'); text.append(node('h3', model.display_name, 'model-name'), node('p', `${metadata(model)} · Download ${bytes(model.disk_size_bytes)} · RAM ${bytes(model.estimated_ram_bytes)}`, 'model-meta'), compatibility(model), capabilities(model)); const isInstalled = installedNames.has(model.runtime_id), blocked = model.compatibility?.state === 'incompatible' || !online || isInstalled; const actions = node('div', '', 'model-actions'); actions.append(iconButton(isInstalled ? 'Bereits installiert' : 'Modell herunterladen', isInstalled ? 'check' : 'download', () => mutate('pull', { model: model.runtime_id }, { confirm: { title: `${model.display_name} herunterladen?`, text: model.compatibility?.state === 'warning' ? 'Der Server meldet eine Warnung. Der Download darf nur nach Backend-Pruefung starten.' : 'Das Modell wird in die lokale Ollama-Runtime geladen.', facts: [['Download',bytes(model.disk_size_bytes)],['RAM',bytes(model.estimated_ram_bytes)],['Disk frei',bytes(hardware?.disk?.available || hardware?.disk?.free)]] }, success: 'Download gestartet.' }), blocked)); card.append(text, actions); return card; }); items.length ? target.replaceChildren(...items) : empty(target, 'Die kuratierte Registry ist leer.');
+  }
+  function renderJobs(jobs) { const target = $('model-downloads'); const items = jobs.slice(0, 30).map(job => { const row = node('article', '', 'model-row'), text = node('div'); text.append(node('h3', job.model_id || job.model, 'model-name')); const line = node('div', '', 'badge-line'); line.append(badge(job.state || job.status, (job.state || job.status).toLowerCase())); text.append(line, node('p', `${job.phase || job.detail || ''} · Start ${date(job.started_at || job.created_at)} · Update ${date(job.updated_at)}`, 'model-meta')); const progress = node('div', '', 'progress-track'), bar = document.createElement('progress'); const total = job.bytes_total ?? job.total, completed = job.bytes_completed ?? job.completed; if (total) { bar.max = total; bar.value = completed || 0; bar.setAttribute('aria-valuetext', `${bytes(completed)} von ${bytes(total)}`); } else { bar.removeAttribute('value'); bar.setAttribute('aria-label', 'Downloadfortschritt unbekannt'); } progress.append(bar, node('p', total ? `${bytes(completed)} / ${bytes(total)}` : `${bytes(completed)} · Gesamtgroesse unbekannt`, 'model-meta')); text.append(progress); if (job.safe_error_message) text.append(node('p', job.safe_error_message, 'model-meta')); const actions = node('div', '', 'model-actions'); if (activeStates.has(job.state || job.status)) actions.append(iconButton('Download abbrechen', 'x', () => mutate('cancel', { job_id: job.job_id || job.id }, { confirm: { title: 'Download abbrechen?', text: 'Der Backend-Stream wird kontrolliert beendet.', facts: [['Modell',job.model_id || job.model]] }, success: 'Abbruch angefordert.' }), (job.state || job.status) === 'CANCELLING', true)); row.append(text, actions); return row; }); items.length ? target.replaceChildren(...items) : empty(target, 'Keine Download-Jobs vorhanden.'); }
+  function renderUsage(usage) { const today = usage.today || {}, routes = today.routes || {}; const values = [['Anfragen',today.requests || 0],['Lokal',routes.local || 0],['Deterministisch',routes.deterministic || 0],['Cloud',routes.cloud || 0],['Lokalrate',`${today.local_rate || 0} %`]]; $('usage-metrics').replaceChildren(...values.map(([label,value]) => { const el=node('div','', 'usage-metric'); el.append(node('strong',String(value)),node('span',label)); return el; })); }
+  function schedule(jobs) { clearTimeout(timer); if (disposed || document.hidden) return; const active = jobs.some(job => activeStates.has(job.state || job.status)); timer = setTimeout(() => refresh(), active ? 1500 : 15000); }
+  async function refresh(force = false) { if (refreshing || disposed || mutating && !force || document.hidden) return; refreshing = true; try { const [status, registry, jobs, routing, usage] = await Promise.all([api('status'),api('registry'),api('downloads'),api('routing'),api('usage')]); snapshot={status,registry,jobs,routing,usage}; $('models-content').hidden=false;$('models-login').hidden=true; const runtime=$('runtime-status'); runtime.textContent=status.online?`ONLINE · ${status.version || 'Version unknown'}`:'OFFLINE';runtime.dataset.state=status.online?'online':'offline'; renderHardware(status);renderRoles(routing,status.installed_models || status.models || [],registry);renderInstalled(status,registry,routing);renderRegistry(registry,status.installed_models || status.models || [],status.hardware,status.online);renderJobs(jobs);renderUsage(usage);window.lucide?.createIcons();schedule(jobs); if (!force && $('models-message').textContent==='Verbindung wird geprueft.') message(''); } catch(error){ message(error.name==='AbortError'?'Aktualisierung abgebrochen.':error.message,true);clearTimeout(timer); } finally { refreshing=false; } }
+  document.querySelectorAll('#role-controls select').forEach(select => select.addEventListener('change', async () => { const previous=select.dataset.previous, model=select.value, role=select.dataset.role; select.disabled=true; const result=await mutate('roles',{role,model},{success:`${role.toUpperCase()} aktualisiert.`}); if(!result) select.value=previous; else select.dataset.previous=model; select.disabled=false; }));
+  $('save-routing').addEventListener('click', () => mutate('routing',{mode:$('routing-mode').value,local_model:$('local-general-model').value,local_fast_model:$('local-fast-model').value,local_general_model:$('local-general-model').value,local_strong_model:$('local-strong-model').value,smart_local_complexity_limit:Number($('smart-local-limit').value),smart_tool_cloud_complexity:Number($('smart-tool-limit').value),daily_cloud_token_budget:Number($('daily-cloud-budget').value),monthly_cloud_cost_budget:Number($('monthly-cloud-budget').value)},{success:'Routing-Richtlinie gespeichert.'}));
+  $('refresh-models').addEventListener('click', () => refresh(true)); $('close-model-details').addEventListener('click', () => $('model-details').close()); $('close-result').addEventListener('click', () => $('result-dialog').close()); document.addEventListener('visibilitychange', () => { if(document.hidden){clearTimeout(timer);controllers.forEach(controller=>controller.abort());}else refresh(true); }); window.addEventListener('pagehide',()=>{disposed=true;clearTimeout(timer);controllers.forEach(controller=>controller.abort());}); refresh(true);
 })();

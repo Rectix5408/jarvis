@@ -5163,6 +5163,12 @@ _local_models = LocalModels(
     os.environ.get("JARVIS_OLLAMA_URL", "http://127.0.0.1:11434"),
     os.environ.get("JARVIS_MODEL_DISK_PATH", ""),
     audit=_audit_local_model,
+    memory_reserve_percent=config.LOCAL_MEMORY_RESERVE_PERCENT,
+    disk_reserve_percent=config.LOCAL_DISK_RESERVE_PERCENT,
+    max_loaded_models=config.LOCAL_MAX_LOADED_MODELS,
+    role_models={"fast": config.LOCAL_FAST_MODEL,
+                 "general": config.LOCAL_GENERAL_MODEL or config.LOCAL_MODEL,
+                 "strong": config.LOCAL_STRONG_MODEL},
 )
 app.include_router(_local_models_router(_local_models, require_local_auth, config))
 app.add_event_handler("startup", _local_models.start)

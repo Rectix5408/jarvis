@@ -24,12 +24,17 @@ def _write_preserve_owner(path: Path, text: str) -> None:
             st = path.stat()
     except Exception:  # noqa: BLE001
         st = None
-    path.write_text(text)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(text)
     try:
         if st is not None and os.geteuid() == 0 and (st.st_uid != 0 or st.st_gid != 0):
-            os.chown(path, st.st_uid, st.st_gid)
+            os.chown(temporary, st.st_uid, st.st_gid)
+        if st is not None:
+            os.chmod(temporary, st.st_mode & 0o777)
+        os.replace(temporary, path)
     except Exception:  # noqa: BLE001
-        pass
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 # Zulaessige Reasoning-Stufen (Denktiefe). "" = Provider-Standard.
@@ -217,6 +222,9 @@ class Config:
     LOCAL_FAST_MODEL: str = os.getenv("JARVIS_LOCAL_FAST_MODEL", "")
     LOCAL_GENERAL_MODEL: str = os.getenv("JARVIS_LOCAL_GENERAL_MODEL", "")
     LOCAL_STRONG_MODEL: str = os.getenv("JARVIS_LOCAL_STRONG_MODEL", "")
+    LOCAL_MAX_LOADED_MODELS: int = max(1, int(os.getenv("LOCAL_MAX_LOADED_MODELS", "1")))
+    LOCAL_MEMORY_RESERVE_PERCENT: int = max(20, min(int(os.getenv("LOCAL_MEMORY_RESERVE_PERCENT", "25")), 90))
+    LOCAL_DISK_RESERVE_PERCENT: int = max(15, min(int(os.getenv("LOCAL_DISK_RESERVE_PERCENT", "20")), 90))
     SMART_LOCAL_COMPLEXITY_LIMIT: float = float(os.getenv("JARVIS_SMART_LOCAL_COMPLEXITY_LIMIT", "0.86"))
     SMART_TOOL_CLOUD_COMPLEXITY: float = float(os.getenv("JARVIS_SMART_TOOL_CLOUD_COMPLEXITY", "0.55"))
     DAILY_CLOUD_TOKEN_BUDGET: int = int(os.getenv("JARVIS_DAILY_CLOUD_TOKEN_BUDGET", "0"))
