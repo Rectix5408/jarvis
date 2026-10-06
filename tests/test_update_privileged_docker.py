@@ -82,7 +82,7 @@ case "$*" in
     fi ;;
   "compose version") exit 0 ;;
   *" config --quiet") exit 0 ;;
-  *" build jarvis") exit 0 ;;
+  *" build jarvis"*) exit 0 ;;
   *" up -d --no-deps jarvis") exit 0 ;;
   *" ps -q jarvis") printf '%s\\n' fixture-container ;;
   *"State.Running"*"fixture-container") printf '%s\\n' true ;;

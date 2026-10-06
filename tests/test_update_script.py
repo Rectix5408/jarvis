@@ -55,7 +55,7 @@ case "$*" in
   "info") exit 0 ;;
   "compose version") exit 0 ;;
   *" config --quiet") [ "${FAIL_CONFIG:-0}" = 0 ] ;;
-  *" build jarvis") [ "${FAIL_BUILD:-0}" = 0 ] ;;
+  *" build jarvis"*) [ "${FAIL_BUILD:-0}" = 0 ] ;;
   *" up -d --no-deps jarvis") [ "${FAIL_UP:-0}" = 0 ] ;;
   *" ps -q jarvis") printf '%s\\n' fixture-container ;;
   *"State.Running"*"fixture-container")

@@ -94,7 +94,8 @@ export JARVIS_COMMIT="$target_commit"
 printf '%s\n' 'Git: OK'
 
 compose config --quiet || fail "Docker-Compose-Konfiguration ist ungueltig"
-compose build "$SERVICE" || fail "Jarvis-Image konnte nicht gebaut werden"
+compose build "$SERVICE" --build-arg "JARVIS_COMMIT=$target_commit" || \
+  fail "Jarvis-Image konnte nicht gebaut werden"
 printf '%s\n' 'Build: OK'
 
 compose up -d --no-deps "$SERVICE" || fail "Jarvis-Container konnte nicht aktualisiert werden"
