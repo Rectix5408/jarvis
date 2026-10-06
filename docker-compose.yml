@@ -12,7 +12,11 @@ services:
 
   # ── Jarvis Haupt-Container (inkl. WhatsApp-Bridge) ────────────────────────
   jarvis:
-    image: ghcr.io/dev-core-busy/jarvis:latest
+    image: jarvis-local:latest
+    build:
+      context: .
+      args:
+        JARVIS_COMMIT: "${JARVIS_COMMIT:-unknown}"
     container_name: jarvis
     restart: unless-stopped
     ports:

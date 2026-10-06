@@ -1,0 +1,8 @@
+# Kopiere diese Datei auf dem Produktionsserver nach docker-compose.override.yml.
+# Die Datei bleibt absichtlich unversioniert und wird von update.sh automatisch
+# zusammen mit docker-compose.yml verwendet.
+services:
+  jarvis:
+    ports: !override
+      - "127.0.0.1:8080:80"
+      - "127.0.0.1:8088:443"

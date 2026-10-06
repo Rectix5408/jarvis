@@ -3,6 +3,8 @@
 .env.local
 .env.*.local
 settings.json
+# Serverlokale Compose-Anpassungen; Vorlage: docker-compose.override.yml.example
+docker-compose.override.yml
 
 # ─── SSL-Zertifikate (werden beim Start auto-generiert) ─────────────────────
 certs/
