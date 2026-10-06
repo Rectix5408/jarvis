@@ -13,6 +13,7 @@ certs/
 
 # ─── Google Auth & OAuth-Tokens ─────────────────────────────────────────────
 data/google_auth/*.json
+data/google_auth/*.sqlite3
 !data/google_auth/credentials.json.example
 /root/.config/gogcli/
 

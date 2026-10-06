@@ -120,7 +120,8 @@ ADMIN: dict[str, list[tuple[str, str]]] = {
     # revoke entzieht dem ganzen System den Google-Zugriff; gog-setup schreibt
     # OAuth-Zugangsdaten.
     "Google (Zugangsdaten, Widerruf)": [
-        ("get", "/api/google/status"), ("post", "/api/google/device-start"),
+        ("get", "/api/google/status"), ("post", "/api/google/auth/start"),
+        ("post", "/api/google/device-start"),
         ("get", "/api/google/device-status"), ("post", "/api/google/revoke"),
         ("get", "/api/google/gog-status"), ("post", "/api/google/gog-setup"),
         ("post", "/api/google/gog-auth-url"), ("post", "/api/google/gog-auth-exchange"),
@@ -220,6 +221,9 @@ EXEMPT = {
     # Externe Automatisierung: Token ODER Agent-API-Key (require_auth_or_agent).
     ("get", "/api/jira/phonenumber"), ("get", "/api/jira/crm-number"),
     ("get", "/api/jira/passende-tickets"),
+    # Google leitet den Browser ohne Jarvis-Bearer-Header zurueck. Der Callback
+    # akzeptiert ausschliesslich einen serverseitig gespeicherten Single-use-State.
+    ("get", "/api/google/callback"),
 }
 # Vision-Medien (Kamerabild, Gesichts-Ausschnitte, Trainings-Vorschau,
 # Begruessungs-Audio) brauchen ``?token=``, weil <img>/<audio> keine Header

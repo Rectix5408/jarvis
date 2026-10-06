@@ -56,7 +56,7 @@ else:
     _pam = None
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -6298,8 +6298,9 @@ async def get_skill_config(name: str, user: str = Depends(require_local_auth)):
 
     # Google: Aktuelle Werte aus Umgebung einblenden
     if name == "google":
-        cfg.setdefault("client_id", os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""))
-        cfg.setdefault("client_secret", os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""))
+        cfg["client_id"] = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+        cfg.pop("client_secret", None)
+        cfg["client_secret_configured"] = bool(os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""))
 
     return JSONResponse({"config": cfg})
 
@@ -6313,9 +6314,9 @@ async def update_skill_config(name: str, request: Request, user: str = Depends(r
 
     # Google-Spezialfall: Client-ID/Secret in .env schreiben
     if name == "google" and success:
-        cid = body.get("client_id", "")
-        csecret = body.get("client_secret", "")
-        if cid or csecret:
+        cid = body.get("client_id") or os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+        csecret = body.get("client_secret") or os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+        if cid and csecret:
             _update_env_google(cid, csecret)
 
     return JSONResponse({"success": success})
@@ -13403,50 +13404,72 @@ def _update_env_google(client_id: str, client_secret: str):
 
     env_path.write_text("\n".join(lines) + "\n")
 
-    # Auch die laufenden Modul-Variablen aktualisieren
+    # Die kanonische OAuth-Implementierung liest die Werte pro Anfrage.
     os.environ["GOOGLE_OAUTH_CLIENT_ID"] = client_id
     os.environ["GOOGLE_OAUTH_CLIENT_SECRET"] = client_secret
-    try:
-        import backend.google_auth as _ga
-        _ga.GOOGLE_CLIENT_ID = client_id
-        _ga.GOOGLE_CLIENT_SECRET = client_secret
-    except Exception:
-        pass
 
 
-# ─── Google OAuth2 (Device Flow) ─────────────────────────────────────
+# ─── Google OAuth2 (Authorization Code Web Flow) ─────────────────────
 
 @app.get("/api/google/status")
 async def google_status(user: str = Depends(require_local_auth)):
     """Gibt den aktuellen Google-Auth-Status zurück."""
-    from backend.google_auth import get_status
+    from backend.tools.google_auth import get_status
     import asyncio as _aio
     status = await _aio.to_thread(get_status)
     return JSONResponse(status)
 
 
+@app.post("/api/google/auth/start")
+async def google_auth_start(user: str = Depends(require_local_auth)):
+    """Startet Web-OAuth fuer einen authentifizierten Jarvis-Admin."""
+    from backend.tools.google_auth import begin_authorization
+    import asyncio as _aio
+    try:
+        authorization_url = await _aio.to_thread(begin_authorization, user)
+    except Exception:
+        return JSONResponse({"error": "google_oauth_not_configured"}, status_code=400)
+    return JSONResponse({"authorization_url": authorization_url})
+
+
+@app.get("/api/google/callback")
+async def google_auth_callback(request: Request):
+    """Google-Callback, geschuetzt durch einen kurzlebigen Single-use-State."""
+    from backend.tools.google_auth import consume_authorization_state, exchange_authorization_code
+    state = request.query_params.get("state", "")
+    code = request.query_params.get("code", "")
+    oauth_error = request.query_params.get("error", "")
+    if not consume_authorization_state(state):
+        return RedirectResponse("/settings?google_oauth=invalid_state", status_code=303)
+    if oauth_error:
+        safe_error = "access_denied" if oauth_error == "access_denied" else "provider_error"
+        return RedirectResponse(f"/settings?google_oauth={safe_error}", status_code=303)
+    if not code:
+        return RedirectResponse("/settings?google_oauth=missing_code", status_code=303)
+    import asyncio as _aio
+    try:
+        await _aio.to_thread(exchange_authorization_code, code, state)
+    except Exception:
+        return RedirectResponse("/settings?google_oauth=exchange_failed", status_code=303)
+    return RedirectResponse("/settings?google_oauth=success", status_code=303)
+
+
 @app.post("/api/google/device-start")
 async def google_device_start(user: str = Depends(require_local_auth)):
-    """Startet den Device Flow – gibt user_code + verification_url zurück."""
-    from backend.google_auth import start_device_flow
-    import asyncio as _aio
-    result = await _aio.to_thread(start_device_flow)
-    if "error" in result:
-        return JSONResponse(result, status_code=400)
-    return JSONResponse(result)
+    """Deprecated: der normale Connector verwendet jetzt Web-OAuth."""
+    return JSONResponse({"error": "device_flow_disabled"}, status_code=410)
 
 
 @app.get("/api/google/device-status")
 async def google_device_status(user: str = Depends(require_local_auth)):
-    """Polling-Endpoint: Status des laufenden Device Flows."""
-    from backend.google_auth import get_flow_status
-    return JSONResponse(get_flow_status())
+    """Deprecated compatibility endpoint ohne Token-Schreibzugriff."""
+    return JSONResponse({"status": "disabled"}, status_code=410)
 
 
 @app.post("/api/google/revoke")
 async def google_revoke(user: str = Depends(require_local_auth)):
     """Widerruft den Google-Zugriff und löscht das Token."""
-    from backend.google_auth import revoke
+    from backend.tools.google_auth import revoke
     import asyncio as _aio
     await _aio.to_thread(revoke)
     return JSONResponse({"ok": True})

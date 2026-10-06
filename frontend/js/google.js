@@ -1,12 +1,11 @@
 /**
  * Jarvis Google Apps – Settings-Tab UI
  *
- * Sektion 1: Jarvis Google Apps (Device Flow OAuth)
+ * Sektion 1: Jarvis Google Apps (Authorization Code Web OAuth)
  * Sektion 2: OpenClaw Gmail / gog  (nur wenn Skill aktiviert)
  */
 class JarvisGoogleManager {
     constructor() {
-        this._devicePollTimer  = null;
         this._gogPollTimer     = null;
         this._gogEmail         = '';
     }
@@ -338,74 +337,23 @@ class JarvisGoogleManager {
         await this._renderAll();
     }
 
-    // ─── Jarvis Google Apps (Device Flow) ─────────────────────────
+    // ─── Jarvis Google Apps (Web OAuth) ───────────────────────────
 
     async connectJarvis() {
         const btn = document.querySelector('#jarvis-google-card .google-btn-connect');
         if (btn) { btn.disabled = true; btn.textContent = '…'; }
 
-        const result = await this._fetchJson('/api/google/device-start', { method: 'POST' });
+        const result = await this._fetchJson('/api/google/auth/start', { method: 'POST' });
         if (!result || result.error) {
             alert(window.t('google.error_label') + ': ' + (result?.error || window.t('google.unknown')));
             await this._renderAll(); return;
         }
 
-        // Device-Flow-UI inline rendern
-        const card = document.getElementById('jarvis-google-card');
-        if (card) {
-            const { user_code, verification_url, expires_in } = result;
-            const min = Math.ceil(expires_in / 60);
-            card.innerHTML = `
-                <div class="google-card-icon">📱</div>
-                <div class="google-card-body">
-                    <div class="google-card-title">${window.t('google.connect_google_2steps')}</div>
-                    <div class="google-flow-steps">
-                        <div class="google-flow-step">
-                            <span class="google-flow-num">1</span>
-                            <span>${window.t('google.flow_step_open')}</span>
-                            <a href="${verification_url}" target="_blank" class="google-flow-url">${verification_url}</a>
-                        </div>
-                        <div class="google-flow-step">
-                            <span class="google-flow-num">2</span>
-                            <span>${window.t('google.flow_step_enter_code')}</span>
-                        </div>
-                    </div>
-                    <div class="google-flow-code">${user_code}</div>
-                    <div class="google-flow-hint" id="jarvis-device-status">${window.t('google.waiting_min').replace('{min}', min)}</div>
-                </div>
-                <button class="kb-btn-action google-btn-revoke"
-                    onclick="window.googleManager._stopDevicePoll();window.googleManager._renderAll()">${window.t('google.cancel')}</button>`;
+        if (!result.authorization_url) {
+            alert(window.t('google.error_label') + ': ' + window.t('google.unknown'));
+            await this._renderAll(); return;
         }
-        this._startDevicePoll();
-    }
-
-    _startDevicePoll() {
-        this._stopDevicePoll();
-        this._devicePollTimer = setInterval(() => this._pollDeviceFlow(), 2000);
-    }
-
-    _stopDevicePoll() {
-        if (this._devicePollTimer) { clearInterval(this._devicePollTimer); this._devicePollTimer = null; }
-    }
-
-    async _pollDeviceFlow() {
-        const data = await this._fetchJson('/api/google/device-status');
-        const el   = document.getElementById('jarvis-device-status');
-        if (!data) return;
-
-        if (data.status === 'authorized') {
-            this._stopDevicePoll();
-            if (el) el.textContent = '✅ ' + (data.message || window.t('google.device_connected'));
-            setTimeout(() => this._renderAll(), 800);
-        } else if (data.status === 'expired' || data.status === 'error') {
-            this._stopDevicePoll();
-            if (el) el.textContent = (data.status === 'expired' ? window.t('google.code_expired') : '❌ ' + window.t('google.error_label')) + window.t('google.try_again_suffix');
-            setTimeout(() => this._renderAll(), 2500);
-        } else if (el && data.expires_in_sec > 0) {
-            const m = Math.floor(data.expires_in_sec / 60);
-            const s = data.expires_in_sec % 60;
-            el.textContent = window.t('google.waiting_countdown').replace('{t}', `${m}:${String(s).padStart(2,'0')}`);
-        }
+        window.location.assign(result.authorization_url);
     }
 
     async revokeJarvis() {

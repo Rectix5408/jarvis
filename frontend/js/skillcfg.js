@@ -326,11 +326,13 @@
                         + 'font-family:inherit;line-height:1.45;">'
                         + esc(val != null ? val : '') + '</textarea>' + hint + '</div>';
                 } else if (f.secret) {
+                    const configured = name === 'google' && key === 'client_secret'
+                        && values.client_secret_configured === true;
                     html += '<div class="form-group"><label for="' + id + '">' + label + '</label>'
                         + '<div style="display:flex;align-items:center;gap:4px;">'
                         + '<input type="password" id="' + id + '" class="config-input" autocomplete="new-password"'
                         + ' data-key="' + esc(key) + '" data-type="string"'
-                        + ' value="' + esc(val != null ? val : '') + '"'
+                        + ' value="" placeholder="' + (configured ? 'Bereits konfiguriert' : '') + '"'
                         + ' style="flex:1;min-width:0;box-sizing:border-box;">'
                         + '<button type="button" class="skcfg-eye" data-for="' + id + '"'
                         + ' data-i18n-title="profile.show_hide" title="Anzeigen/verbergen"'
